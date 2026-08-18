@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtCore import QObject, QThread, Signal
 
 from ui_form import Ui_Widget
+from config_dialog import ConfigDialog
 
 
 SRC_DIR = Path(__file__).resolve().parent / "src"
@@ -93,6 +94,20 @@ class Widget(QWidget):
 
         self.start_button = self.ui.StartButton
         self.start_button.clicked.connect(self.start_worker)
+
+        self.ui.AshanButton.clicked.connect(lambda: self.open_config("Ашан", "ashan.json"))
+        self.ui.SilpoButton.clicked.connect(lambda: self.open_config("Сільпо", "silpo.json"))
+        self.ui.ATBButton.clicked.connect(lambda: self.open_config("АТБ", "atb.json"))
+        self.ui.FozzyButton.clicked.connect(lambda: self.open_config("Фоззі", "fozzy.json"))
+        self.ui.NovusButton.clicked.connect(lambda: self.open_config("Новус", "novus.json"))
+        self.ui.ForaButton.clicked.connect(lambda: self.open_config("Фора", "fora.json"))
+        self.ui.VarusButton.clicked.connect(lambda: self.open_config("Варус", "varus.json"))
+        self.ui.MetroButton.clicked.connect(lambda: self.open_config("Метро", "metro.json"))
+        self.ui.TavriaButton.clicked.connect(lambda: self.open_config("Таврія", "tavria.json"))
+
+    def open_config(self, shop_name: str, json_filename: str):
+        dialog = ConfigDialog(shop_name, json_filename, self)
+        dialog.exec()
 
     def start_worker(self):
         if self.thread is not None and self.thread.isRunning():
