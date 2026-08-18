@@ -1,39 +1,76 @@
-from patchright.async_api import async_playwright, TimeoutError,  Page
+from patchright.async_api import async_playwright, TimeoutError, Page
 import asyncio
 from excel_add import add_to_excel
 from json_manager import read_json
-async def fozzy_parsing_one(page:Page, url:str):
+
+async def fozzy_parsing_one(page: Page, url: str):
     try:
-        await page.goto(url, wait_until='domcontentloaded')
+        await page.goto(url, wait_until='domcontentloaded', timeout=15000)
     except TimeoutError:
-        print(f'Can`t load {page.url}')
+        print(f"Can't load {url}")
         return
-    product_name = (await page.locator('div[class="product_name"]').text_content(timeout=3000)).strip()
+    except Exception as e:
+        print(f"Error navigating to {url}: {e}")
+        return
+
     try:
-        old_price = (await page.locator('div[class*="price_container"]').locator('span[class="old_price"]').first.text_content(timeout=3000)).strip()
+        raw_name = await page.locator('div[class="product_name"]').text_content(timeout=3000)
+        product_name = raw_name.strip() if raw_name else '-'
+    except TimeoutError:
+        product_name = '-'
+
+    try:
+        raw_old = await page.locator('div[class*="price_container"]').locator('span[class="old_price"]').first.text_content(timeout=3000)
+        old_price = raw_old.strip() if raw_old else '-'
     except TimeoutError:
         old_price = '-'
-    regular_price = (await page.locator('div[class*="price_container"]').locator('span[class="regular_price"]').first.text_content(timeout=3000)).strip()
+
+    try:
+        raw_regular = await page.locator('div[class*="price_container"]').locator('span[class="regular_price"]').first.text_content(timeout=3000)
+        regular_price = raw_regular.strip() if raw_regular else '-'
+    except TimeoutError:
+        regular_price = '-'
+
     if old_price == '-':
         price = regular_price
         sale_price = old_price
     else:
         price = old_price
         sale_price = regular_price
-    producer = await page.locator('div[class="product_characteristics_item"]', has_text='Бренд').locator('a').text_content()
 
-    data = {'shop':'Фоззі','name':product_name, 'price':price, 'sale_price':sale_price, 'producer':producer.strip(), 'url':page.url}
-    print(data)
+    try:
+        raw_producer = await page.locator('div[class="product_characteristics_item"]', has_text='Бренд').locator('a').text_content(timeout=3000)
+        producer = raw_producer.strip() if raw_producer else '-'
+    except TimeoutError:
+        producer = '-'
+
+    data = {
+        'shop': 'Фоззі',
+        'name': product_name,
+        'price': price,
+        'sale_price': sale_price,
+        'producer': producer,
+        'url': page.url
+    }
     await add_to_excel(data)
 
-async def fozzy_parsing_all(page:Page):
+async def fozzy_parsing_all(page: Page):
     data = await read_json('fozzy.json')
+    if not data:
+        return
     for item in data:
-        await fozzy_parsing_one(page,item)
+        try:
+            await fozzy_parsing_one(page, item)
+        except Exception as e:
+            print(f"Error parsing Fozzy item {item}: {e}")
+        await asyncio.sleep(1)
 
 async def test():
     async with async_playwright() as p:
         b = await p.chromium.launch(headless=False)
         page = await b.new_page()
         await fozzy_parsing_one(page, "https://fozzyshop.ua/skhidni-solodoshchi-khalva/950652-pastyla-fruktova-premiia-grusha-iabluko-ta-iabluko-persyk.html")
-asyncio.run(test())
+        await b.close()
+
+if __name__ == "__main__":
+    asyncio.run(test())
