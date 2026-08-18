@@ -1,6 +1,7 @@
 import ctypes
 import json
 import os
+import time
 import winsound
 from pathlib import Path
 
@@ -58,11 +59,11 @@ class ConfigDialog(QDialog):
         self.last_clipboard = ""
 
         self.setWindowTitle(f"Конфігурація - {self.shop_name}")
-        self.resize(700, 520)
+        self.resize(720, 530)
 
-        self.hotkey_timer = QTimer(self)
-        self.hotkey_timer.setInterval(80)
-        self.hotkey_timer.timeout.connect(self.check_hotkey)
+        self.poll_timer = QTimer(self)
+        self.poll_timer.setInterval(150)
+        self.poll_timer.timeout.connect(self.on_timer_tick)
 
         self.setup_ui()
         self.load_urls()
@@ -72,13 +73,18 @@ class ConfigDialog(QDialog):
 
         top_layout = QHBoxLayout()
 
-        self.macro_button = QPushButton("⚡ Макрос (F8)", self)
+        self.macro_button = QPushButton("⚡ Макрос авто-захоплення (F8)", self)
         self.macro_button.setCheckable(True)
         self.macro_button.setFixedHeight(32)
         self.macro_button.toggled.connect(self.toggle_macro)
         top_layout.addWidget(self.macro_button)
 
         top_layout.addStretch()
+
+        self.delete_button = QPushButton("Видалити обране", self)
+        self.delete_button.setFixedHeight(32)
+        self.delete_button.clicked.connect(self.delete_selected)
+        top_layout.addWidget(self.delete_button)
 
         self.add_button = QPushButton("+", self)
         self.add_button.setFixedSize(36, 32)
@@ -88,7 +94,7 @@ class ConfigDialog(QDialog):
         main_layout.addLayout(top_layout)
 
         self.search_input = QLineEdit(self)
-        self.search_input.setPlaceholderText("Пошук")
+        self.search_input.setPlaceholderText("Пошук посилання...")
         self.search_input.textChanged.connect(self.filter_urls)
         main_layout.addWidget(self.search_input)
 
@@ -96,7 +102,7 @@ class ConfigDialog(QDialog):
         main_layout.addWidget(self.list_widget)
 
         self.status_label = QLabel(self)
-        self.status_label.setStyleSheet("color: #888888; font-size: 11px;")
+        self.status_label.setStyleSheet("color: #2e7d32; font-weight: bold; font-size: 11px;")
         main_layout.addWidget(self.status_label)
 
     def load_urls(self):
@@ -133,39 +139,73 @@ class ConfigDialog(QDialog):
 
     def toggle_macro(self, checked: bool):
         if checked:
-            self.macro_button.setText("⚡ Макрос активний (F8 / Копіювання)")
-            self.status_label.setText("Макрос активний: натисніть F8 над товаром або скопіюйте посилання")
-            self.last_clipboard = QGuiApplication.clipboard().text()
-            QGuiApplication.clipboard().dataChanged.connect(self.on_clipboard_changed)
-            self.hotkey_timer.start()
+            self.macro_button.setText("🟢 Макрос активний (Натисніть F8 над товаром або Скопіюйте URL)")
+            self.status_label.setText("Режим активний: наведіть курсор на товар і натисніть F8 (або скопіюйте посилання)")
+            self.last_clipboard = QGuiApplication.clipboard().text().strip()
+            self.poll_timer.start()
         else:
-            self.macro_button.setText("⚡ Макрос (F8)")
+            self.macro_button.setText("⚡ Макрос авто-захоплення (F8)")
             self.status_label.setText("")
-            self.hotkey_timer.stop()
-            try:
-                QGuiApplication.clipboard().dataChanged.disconnect(self.on_clipboard_changed)
-            except Exception:
-                pass
+            self.poll_timer.stop()
 
-    def check_hotkey(self):
+    def on_timer_tick(self):
+        if not self.macro_button.isChecked():
+            return
+
         VK_F8 = 0x77
         if ctypes.windll.user32.GetAsyncKeyState(VK_F8) & 0x8000:
+            self.trigger_cursor_copy()
+
+        current_clip = QGuiApplication.clipboard().text().strip()
+        if current_clip and current_clip != self.last_clipboard:
+            self.last_clipboard = current_clip
+            if current_clip.startswith("http://") or current_clip.startswith("https://"):
+                self.add_url(current_clip)
+
+    def trigger_cursor_copy(self):
+        MOUSEEVENTF_RIGHTDOWN = 0x0008
+        MOUSEEVENTF_RIGHTUP = 0x0010
+        VK_ESCAPE = 0x1B
+
+        ctypes.windll.user32.mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
+        ctypes.windll.user32.mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
+        time.sleep(0.08)
+
+        ctypes.windll.user32.keybd_event(0x45, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(0x45, 0, 2, 0)
+        time.sleep(0.05)
+
+        ctypes.windll.user32.keybd_event(VK_ESCAPE, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(VK_ESCAPE, 0, 2, 0)
+
+        QTimer.singleShot(150, self.check_clipboard_after_trigger)
+
+    def check_clipboard_after_trigger(self):
+        current_clip = QGuiApplication.clipboard().text().strip()
+        if current_clip.startswith("http://") or current_clip.startswith("https://"):
+            self.add_url(current_clip)
+        else:
+            ctypes.windll.user32.keybd_event(0x12, 0, 0, 0)
+            ctypes.windll.user32.keybd_event(0x44, 0, 0, 0)
+            ctypes.windll.user32.keybd_event(0x44, 0, 2, 0)
+            ctypes.windll.user32.keybd_event(0x12, 0, 2, 0)
+            time.sleep(0.05)
+
             ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)
             ctypes.windll.user32.keybd_event(0x43, 0, 0, 0)
             ctypes.windll.user32.keybd_event(0x43, 0, 2, 0)
             ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)
-            QTimer.singleShot(120, self.process_current_clipboard)
+            time.sleep(0.05)
 
-    def on_clipboard_changed(self):
-        if self.macro_button.isChecked():
-            self.process_current_clipboard()
+            ctypes.windll.user32.keybd_event(0x1B, 0, 0, 0)
+            ctypes.windll.user32.keybd_event(0x1B, 0, 2, 0)
 
-    def process_current_clipboard(self):
-        text = QGuiApplication.clipboard().text().strip()
-        if text and text != self.last_clipboard:
-            self.last_clipboard = text
-            if text.startswith("http://") or text.startswith("https://"):
-                self.add_url(text)
+            QTimer.singleShot(150, self.check_final_clip)
+
+    def check_final_clip(self):
+        current_clip = QGuiApplication.clipboard().text().strip()
+        if current_clip.startswith("http://") or current_clip.startswith("https://"):
+            self.add_url(current_clip)
 
     def add_url(self, url: str):
         if url not in self.urls:
@@ -173,13 +213,25 @@ class ConfigDialog(QDialog):
             self.save_urls()
             self.load_urls()
             self.filter_urls(self.search_input.text())
-            self.status_label.setText(f"Додано: {url}")
+            self.status_label.setText(f"✓ Додано: {url}")
             try:
                 winsound.MessageBeep(winsound.MB_OK)
             except Exception:
                 pass
         else:
-            self.status_label.setText(f"Вже є у списку: {url}")
+            self.status_label.setText(f"ℹ Вже є у списку: {url}")
+
+    def delete_selected(self):
+        current_item = self.list_widget.currentItem()
+        if not current_item:
+            return
+        url_to_remove = current_item.text()
+        if url_to_remove in self.urls:
+            self.urls.remove(url_to_remove)
+            self.save_urls()
+            self.load_urls()
+            self.filter_urls(self.search_input.text())
+            self.status_label.setText(f"Видалено: {url_to_remove}")
 
     def open_add_dialog(self):
         dialog = AddUrlDialog(self)
