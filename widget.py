@@ -4,24 +4,27 @@ import asyncio
 import sys
 from pathlib import Path
 
+SRC_DIR = Path(__file__).resolve().parent / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+import excel_add
+import json_manager
+import atb_async_parser_product
+import ashan_parser_product
+import novus_parser_product
+import fozzy_parser_product
+import fora_parser_product
+import tavria_parser_product
+import silpo_parser_product
+import varus_parser_product
+import metro_parser_product
+
 from PySide6.QtWidgets import QApplication, QWidget, QMessageBox
 from PySide6.QtCore import QObject, QThread, Signal
 
 from ui_form import Ui_Widget
 from config_dialog import ConfigDialog
-
-if getattr(sys, "frozen", False):
-    BASE_DIR = Path(sys.executable).resolve().parent
-    MEIPASS_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
-    SRC_DIR = MEIPASS_DIR / "src"
-else:
-    BASE_DIR = Path(__file__).resolve().parent
-    SRC_DIR = BASE_DIR / "src"
-
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
 
 
 class Worker(QObject):
@@ -38,9 +41,6 @@ class Worker(QObject):
             self.finished.emit()
 
     async def _parse_all_shops(self):
-        if str(SRC_DIR) not in sys.path:
-            sys.path.insert(0, str(SRC_DIR))
-
         parsers = self._load_parsers()
         if not parsers:
             return
@@ -78,29 +78,16 @@ class Worker(QObject):
 
     @staticmethod
     def _load_parsers():
-        if str(SRC_DIR) not in sys.path:
-            sys.path.insert(0, str(SRC_DIR))
-
-        import atb_async_parser_product
-        import ashan_parser_product
-        import novus_parser_product
-        import fozzy_parser_product
-        import fora_parser_product
-        import tavria_parser_product
-        import silpo_parser_product
-        import varus_parser_product
-        import metro_parser_product
-
         return [
-            ("atb", getattr(atb_async_parser_product, "atb_all_parsing")),
-            ("ashan", getattr(ashan_parser_product, "ashan_parsing_all")),
-            ("novus", getattr(novus_parser_product, "novus_parsing_all")),
-            ("fozzy", getattr(fozzy_parser_product, "fozzy_parsing_all")),
-            ("fora", getattr(fora_parser_product, "fora_parsing_all")),
-            ("tavria", getattr(tavria_parser_product, "tavria_parsing_all")),
-            ("silpo", getattr(silpo_parser_product, "silpo_parsing_all")),
-            ("varus", getattr(varus_parser_product, "varus_parsing_all")),
-            ("metro", getattr(metro_parser_product, "metro_parsing_all")),
+            ("atb", atb_async_parser_product.atb_all_parsing),
+            ("ashan", ashan_parser_product.ashan_parsing_all),
+            ("novus", novus_parser_product.novus_parsing_all),
+            ("fozzy", fozzy_parser_product.fozzy_parsing_all),
+            ("fora", fora_parser_product.fora_parsing_all),
+            ("tavria", tavria_parser_product.tavria_parsing_all),
+            ("silpo", silpo_parser_product.silpo_parsing_all),
+            ("varus", varus_parser_product.varus_parsing_all),
+            ("metro", metro_parser_product.metro_parsing_all),
         ]
 
 
