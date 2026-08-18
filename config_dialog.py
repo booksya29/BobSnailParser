@@ -1,4 +1,5 @@
 import ctypes
+from ctypes import wintypes, byref, c_void_p, Structure, POINTER, WINFUNCTYPE, HRESULT, c_long, c_int
 import json
 import os
 import re
@@ -20,6 +21,155 @@ from PySide6.QtWidgets import (
 )
 
 BASE_DIR = Path(__file__).resolve().parent / "src" / "urls_db"
+
+ole32 = ctypes.windll.ole32
+user32 = ctypes.windll.user32
+oleaut32 = ctypes.windll.oleaut32
+
+try:
+    ole32.CoInitialize(None)
+except Exception:
+    pass
+
+
+class GUID(Structure):
+    _fields_ = [
+        ("Data1", wintypes.DWORD),
+        ("Data2", wintypes.WORD),
+        ("Data3", wintypes.WORD),
+        ("Data4", wintypes.BYTE * 8),
+    ]
+
+
+class POINT(Structure):
+    _fields_ = [("x", c_long), ("y", c_long)]
+
+
+class VARIANT(Structure):
+    _fields_ = [
+        ("vt", wintypes.WORD),
+        ("wReserved1", wintypes.WORD),
+        ("wReserved2", wintypes.WORD),
+        ("wReserved3", wintypes.WORD),
+        ("data", c_void_p),
+        ("data2", c_void_p),
+    ]
+
+
+CLSID_CUIAutomation = GUID(
+    0xFF48DBA4,
+    0x60EF,
+    0x4201,
+    (wintypes.BYTE * 8)(0xAA, 0x87, 0x54, 0x10, 0x3E, 0xEF, 0x59, 0x4E),
+)
+IID_IUIAutomation = GUID(
+    0x30CBE57D,
+    0xD9D0,
+    0x452A,
+    (wintypes.BYTE * 8)(0xAB, 0x13, 0x7A, 0xC5, 0xAC, 0x48, 0x25, 0xEE),
+)
+
+_uia_instance = None
+_walker_instance = None
+
+
+def get_uia():
+    global _uia_instance, _walker_instance
+    if _uia_instance is None:
+        try:
+            uia_ptr = c_void_p()
+            hr = ole32.CoCreateInstance(
+                byref(CLSID_CUIAutomation),
+                None,
+                1,
+                byref(IID_IUIAutomation),
+                byref(uia_ptr),
+            )
+            if hr == 0 and uia_ptr:
+                _uia_instance = uia_ptr
+                vtable = ctypes.cast(
+                    ctypes.cast(uia_ptr, POINTER(c_void_p)).contents,
+                    POINTER(c_void_p),
+                )
+                GetControlViewWalker = WINFUNCTYPE(
+                    HRESULT, c_void_p, POINTER(c_void_p)
+                )(vtable[14])
+                walker_ptr = c_void_p()
+                if GetControlViewWalker(uia_ptr, byref(walker_ptr)) == 0:
+                    _walker_instance = walker_ptr
+        except Exception:
+            _uia_instance = None
+    return _uia_instance, _walker_instance
+
+
+def get_prop_string(elem_ptr, prop_id):
+    if not elem_ptr:
+        return None
+    try:
+        elem_vtable = ctypes.cast(
+            ctypes.cast(elem_ptr, POINTER(c_void_p)).contents, POINTER(c_void_p)
+        )
+        GetCurrentPropertyValue = WINFUNCTYPE(
+            HRESULT, c_void_p, c_int, POINTER(VARIANT)
+        )(elem_vtable[10])
+        var = VARIANT()
+        hr = GetCurrentPropertyValue(elem_ptr, prop_id, byref(var))
+        if hr == 0 and var.vt == 8 and var.data:
+            val = ctypes.wstring_at(var.data)
+            oleaut32.VariantClear(byref(var))
+            return val
+        oleaut32.VariantClear(byref(var))
+    except Exception:
+        pass
+    return None
+
+
+def extract_url_under_cursor():
+    uia, walker = get_uia()
+    if not uia or not walker:
+        return None
+
+    try:
+        vtable = ctypes.cast(
+            ctypes.cast(uia, POINTER(c_void_p)).contents, POINTER(c_void_p)
+        )
+        ElementFromPoint = WINFUNCTYPE(HRESULT, c_void_p, POINT, POINTER(c_void_p))(
+            vtable[7]
+        )
+
+        walker_vtable = ctypes.cast(
+            ctypes.cast(walker, POINTER(c_void_p)).contents, POINTER(c_void_p)
+        )
+        GetParentElement = WINFUNCTYPE(
+            HRESULT, c_void_p, c_void_p, POINTER(c_void_p)
+        )(walker_vtable[3])
+
+        pt = POINT()
+        user32.GetCursorPos(byref(pt))
+        elem = c_void_p()
+        hr = ElementFromPoint(uia, pt, byref(elem))
+        if hr != 0 or not elem:
+            return None
+
+        curr = elem
+        for _ in range(15):
+            if not curr:
+                break
+            for prop_id in (30045, 30093, 30013, 30094, 30005):
+                val = get_prop_string(curr, prop_id)
+                if val and ("http://" in val or "https://" in val):
+                    m = re.search(r"https?://[^\s\"\'<>]+", val)
+                    if m:
+                        return m.group(0)
+
+            parent = c_void_p()
+            hr_p = GetParentElement(walker, curr, byref(parent))
+            if hr_p != 0 or not parent:
+                break
+            curr = parent
+    except Exception:
+        pass
+    return None
 
 
 class AddUrlDialog(QDialog):
@@ -115,7 +265,7 @@ class ConfigDialog(QDialog):
         self.setAcceptDrops(True)
 
         self.poll_timer = QTimer(self)
-        self.poll_timer.setInterval(100)
+        self.poll_timer.setInterval(80)
         self.poll_timer.timeout.connect(self.on_timer_tick)
 
         self.setup_ui()
@@ -193,7 +343,7 @@ class ConfigDialog(QDialog):
     def toggle_macro(self, checked: bool):
         if checked:
             self.macro_button.setText("Макрос (активний)")
-            self.status_label.setText("Макрос увімкнено: перетягніть товар мишкою у вікно, натисніть Ctrl+Q на сторінці або скопіюйте URL")
+            self.status_label.setText("Макрос увімкнено: наведіть курсор на товар у каталозі та натисніть Ctrl+Q")
             self.last_clipboard = QGuiApplication.clipboard().text().strip()
             self.poll_timer.start()
         else:
@@ -215,9 +365,9 @@ class ConfigDialog(QDialog):
 
         now = time.time()
         if (ctrl_pressed and q_pressed) or f8_pressed:
-            if now - self.last_hotkey_time > 0.5:
+            if now - self.last_hotkey_time > 0.35:
                 self.last_hotkey_time = now
-                self.grab_browser_page_url()
+                self.handle_macro_trigger()
 
         current_clip = QGuiApplication.clipboard().text().strip()
         if current_clip and current_clip != self.last_clipboard:
@@ -225,7 +375,14 @@ class ConfigDialog(QDialog):
             if current_clip.startswith("http://") or current_clip.startswith("https://"):
                 self.add_url(current_clip)
 
-    def grab_browser_page_url(self):
+    def handle_macro_trigger(self):
+        url = extract_url_under_cursor()
+        if url:
+            self.add_url(url)
+        else:
+            self.fallback_browser_grab()
+
+    def fallback_browser_grab(self):
         VK_CONTROL = 0x11
         VK_MENU = 0x12
         VK_D = 0x44
@@ -233,27 +390,27 @@ class ConfigDialog(QDialog):
         VK_ESCAPE = 0x1B
 
         ctypes.windll.user32.keybd_event(VK_CONTROL, 0, 2, 0)
-        time.sleep(0.03)
+        time.sleep(0.02)
 
         ctypes.windll.user32.keybd_event(VK_MENU, 0, 0, 0)
         ctypes.windll.user32.keybd_event(VK_D, 0, 0, 0)
-        time.sleep(0.03)
+        time.sleep(0.02)
         ctypes.windll.user32.keybd_event(VK_D, 0, 2, 0)
         ctypes.windll.user32.keybd_event(VK_MENU, 0, 2, 0)
-        time.sleep(0.08)
+        time.sleep(0.06)
 
         ctypes.windll.user32.keybd_event(VK_CONTROL, 0, 0, 0)
         ctypes.windll.user32.keybd_event(VK_C, 0, 0, 0)
-        time.sleep(0.03)
+        time.sleep(0.02)
         ctypes.windll.user32.keybd_event(VK_C, 0, 2, 0)
         ctypes.windll.user32.keybd_event(VK_CONTROL, 0, 2, 0)
-        time.sleep(0.06)
+        time.sleep(0.04)
 
         ctypes.windll.user32.keybd_event(VK_ESCAPE, 0, 0, 0)
         time.sleep(0.02)
         ctypes.windll.user32.keybd_event(VK_ESCAPE, 0, 2, 0)
 
-        QTimer.singleShot(100, self.check_copied_result)
+        QTimer.singleShot(80, self.check_copied_result)
 
     def check_copied_result(self):
         current_clip = QGuiApplication.clipboard().text().strip()
