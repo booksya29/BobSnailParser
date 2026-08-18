@@ -1,8 +1,15 @@
 # This Python file uses the following encoding: utf-8
 
 import asyncio
+import os
 import sys
 from pathlib import Path
+
+if getattr(sys, "frozen", False):
+    app_dir = Path(sys.executable).resolve().parent
+    local_browsers = app_dir / "_internal" / "patchright" / "driver" / "package" / ".local-browsers"
+    if local_browsers.exists():
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(local_browsers)
 
 SRC_DIR = Path(__file__).resolve().parent / "src"
 if str(SRC_DIR) not in sys.path:
