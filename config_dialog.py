@@ -174,21 +174,35 @@ class ConfigDialog(QDialog):
                 self.add_url(current_clip)
 
     def perform_cursor_copy(self):
-        ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)
-        ctypes.windll.user32.keybd_event(0x10, 0, 2, 0)
-        ctypes.windll.user32.keybd_event(0x12, 0, 2, 0)
+        VK_CONTROL = 0x11
+        VK_SHIFT = 0x10
+        VK_MENU = 0x12
+        VK_DOWN = 0x28
+        VK_RETURN = 0x0D
+        VK_ESCAPE = 0x1B
+
+        ctypes.windll.user32.keybd_event(VK_CONTROL, 0, 2, 0)
+        ctypes.windll.user32.keybd_event(VK_SHIFT, 0, 2, 0)
+        ctypes.windll.user32.keybd_event(VK_MENU, 0, 2, 0)
         time.sleep(0.04)
 
         ctypes.windll.user32.mouse_event(0x0008, 0, 0, 0, 0)
         ctypes.windll.user32.mouse_event(0x0010, 0, 0, 0, 0)
-        time.sleep(0.08)
+        time.sleep(0.12)
 
-        ctypes.windll.user32.keybd_event(0x45, 0, 0, 0)
-        ctypes.windll.user32.keybd_event(0x45, 0, 2, 0)
+        for _ in range(5):
+            ctypes.windll.user32.keybd_event(VK_DOWN, 0, 0, 0)
+            time.sleep(0.02)
+            ctypes.windll.user32.keybd_event(VK_DOWN, 0, 2, 0)
+            time.sleep(0.02)
+
+        ctypes.windll.user32.keybd_event(VK_RETURN, 0, 0, 0)
+        time.sleep(0.02)
+        ctypes.windll.user32.keybd_event(VK_RETURN, 0, 2, 0)
         time.sleep(0.05)
 
-        ctypes.windll.user32.keybd_event(0x1B, 0, 0, 0)
-        ctypes.windll.user32.keybd_event(0x1B, 0, 2, 0)
+        ctypes.windll.user32.keybd_event(VK_ESCAPE, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(VK_ESCAPE, 0, 2, 0)
 
         QTimer.singleShot(100, self.check_copied_result)
 
