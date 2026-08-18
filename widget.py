@@ -111,6 +111,7 @@ class Widget(QWidget):
 
         self.ui = Ui_Widget()
         self.ui.setupUi(self)
+        self.setWindowTitle("Bob Snail")
 
         self.thread = None
         self.worker = None

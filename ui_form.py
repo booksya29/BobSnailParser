@@ -263,7 +263,7 @@ class Ui_Widget(object):
     # setupUi
 
     def retranslateUi(self, Widget):
-        Widget.setWindowTitle(QCoreApplication.translate("Widget", u"Widget", None))
+        Widget.setWindowTitle(QCoreApplication.translate("Widget", u"Bob Snail", None))
         self.AshanLabel.setText(QCoreApplication.translate("Widget", u"\u0410\u0448\u0430\u043d", None))
         self.AshanButton.setText(QCoreApplication.translate("Widget", u"Edit Config", None))
         self.SilpoLabel.setText(QCoreApplication.translate("Widget", u"\u0421\u0456\u043b\u044c\u043f\u043e", None))
