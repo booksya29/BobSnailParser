@@ -1,12 +1,13 @@
 import ctypes
 import json
 import os
+import re
 import time
 import winsound
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QGuiApplication, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -49,6 +50,56 @@ class AddUrlDialog(QDialog):
         return self.url_input.text().strip()
 
 
+class UrlListWidget(QListWidget):
+    def __init__(self, parent_dialog):
+        super().__init__(parent_dialog)
+        self.parent_dialog = parent_dialog
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls() or event.mimeData().hasText() or event.mimeData().hasHtml():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls() or event.mimeData().hasText() or event.mimeData().hasHtml():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent):
+        mime = event.mimeData()
+        added = False
+
+        if mime.hasUrls():
+            for url in mime.urls():
+                url_str = url.toString().strip()
+                if url_str.startswith("http://") or url_str.startswith("https://"):
+                    self.parent_dialog.add_url(url_str)
+                    added = True
+
+        if not added and mime.hasText():
+            text = mime.text().strip()
+            for line in text.splitlines():
+                line = line.strip()
+                if line.startswith("http://") or line.startswith("https://"):
+                    self.parent_dialog.add_url(line)
+                    added = True
+
+        if not added and mime.hasHtml():
+            html = mime.html()
+            links = re.findall(r'href=["\'](https?://[^"\']+)["\']', html)
+            for link in links:
+                self.parent_dialog.add_url(link)
+                added = True
+
+        if added:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+
 class ConfigDialog(QDialog):
     def __init__(self, shop_name: str, json_filename: str, parent=None):
         super().__init__(parent)
@@ -61,6 +112,7 @@ class ConfigDialog(QDialog):
 
         self.setWindowTitle(f"Конфігурація - {self.shop_name}")
         self.resize(720, 530)
+        self.setAcceptDrops(True)
 
         self.poll_timer = QTimer(self)
         self.poll_timer.setInterval(100)
@@ -74,7 +126,7 @@ class ConfigDialog(QDialog):
 
         top_layout = QHBoxLayout()
 
-        self.macro_button = QPushButton("Макрос", self)
+        self.macro_button = QPushButton("Макрос (Ctrl+Q)", self)
         self.macro_button.setCheckable(True)
         self.macro_button.setFixedHeight(32)
         self.macro_button.toggled.connect(self.toggle_macro)
@@ -99,7 +151,7 @@ class ConfigDialog(QDialog):
         self.search_input.textChanged.connect(self.filter_urls)
         main_layout.addWidget(self.search_input)
 
-        self.list_widget = QListWidget(self)
+        self.list_widget = UrlListWidget(self)
         main_layout.addWidget(self.list_widget)
 
         self.status_label = QLabel(self)
@@ -141,11 +193,11 @@ class ConfigDialog(QDialog):
     def toggle_macro(self, checked: bool):
         if checked:
             self.macro_button.setText("Макрос (активний)")
-            self.status_label.setText("Макрос увімкнено: наведіть курсор на товар і натисніть Ctrl+Q або F8")
+            self.status_label.setText("Макрос увімкнено: перетягніть товар мишкою у вікно, натисніть Ctrl+Q на сторінці або скопіюйте URL")
             self.last_clipboard = QGuiApplication.clipboard().text().strip()
             self.poll_timer.start()
         else:
-            self.macro_button.setText("Макрос")
+            self.macro_button.setText("Макрос (Ctrl+Q)")
             self.status_label.setText("")
             self.poll_timer.stop()
 
@@ -165,7 +217,7 @@ class ConfigDialog(QDialog):
         if (ctrl_pressed and q_pressed) or f8_pressed:
             if now - self.last_hotkey_time > 0.5:
                 self.last_hotkey_time = now
-                self.perform_cursor_copy()
+                self.grab_browser_page_url()
 
         current_clip = QGuiApplication.clipboard().text().strip()
         if current_clip and current_clip != self.last_clipboard:
@@ -173,64 +225,37 @@ class ConfigDialog(QDialog):
             if current_clip.startswith("http://") or current_clip.startswith("https://"):
                 self.add_url(current_clip)
 
-    def perform_cursor_copy(self):
+    def grab_browser_page_url(self):
         VK_CONTROL = 0x11
-        VK_SHIFT = 0x10
         VK_MENU = 0x12
-        VK_DOWN = 0x28
-        VK_RETURN = 0x0D
+        VK_D = 0x44
+        VK_C = 0x43
         VK_ESCAPE = 0x1B
 
         ctypes.windll.user32.keybd_event(VK_CONTROL, 0, 2, 0)
-        ctypes.windll.user32.keybd_event(VK_SHIFT, 0, 2, 0)
+        time.sleep(0.03)
+
+        ctypes.windll.user32.keybd_event(VK_MENU, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(VK_D, 0, 0, 0)
+        time.sleep(0.03)
+        ctypes.windll.user32.keybd_event(VK_D, 0, 2, 0)
         ctypes.windll.user32.keybd_event(VK_MENU, 0, 2, 0)
         time.sleep(0.08)
 
-        ctypes.windll.user32.mouse_event(0x0008, 0, 0, 0, 0)
-        time.sleep(0.04)
-        ctypes.windll.user32.mouse_event(0x0010, 0, 0, 0, 0)
-        time.sleep(0.25)
-
-        for _ in range(5):
-            ctypes.windll.user32.keybd_event(VK_DOWN, 0, 0, 0)
-            time.sleep(0.04)
-            ctypes.windll.user32.keybd_event(VK_DOWN, 0, 2, 0)
-            time.sleep(0.04)
-
-        time.sleep(0.08)
-        ctypes.windll.user32.keybd_event(VK_RETURN, 0, 0, 0)
-        time.sleep(0.04)
-        ctypes.windll.user32.keybd_event(VK_RETURN, 0, 2, 0)
-        time.sleep(0.12)
+        ctypes.windll.user32.keybd_event(VK_CONTROL, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(VK_C, 0, 0, 0)
+        time.sleep(0.03)
+        ctypes.windll.user32.keybd_event(VK_C, 0, 2, 0)
+        ctypes.windll.user32.keybd_event(VK_CONTROL, 0, 2, 0)
+        time.sleep(0.06)
 
         ctypes.windll.user32.keybd_event(VK_ESCAPE, 0, 0, 0)
         time.sleep(0.02)
         ctypes.windll.user32.keybd_event(VK_ESCAPE, 0, 2, 0)
 
-        QTimer.singleShot(200, self.check_copied_result)
+        QTimer.singleShot(100, self.check_copied_result)
 
     def check_copied_result(self):
-        current_clip = QGuiApplication.clipboard().text().strip()
-        if current_clip and (current_clip.startswith("http://") or current_clip.startswith("https://")):
-            self.add_url(current_clip)
-        else:
-            ctypes.windll.user32.mouse_event(0x0008, 0, 0, 0, 0)
-            time.sleep(0.04)
-            ctypes.windll.user32.mouse_event(0x0010, 0, 0, 0, 0)
-            time.sleep(0.25)
-
-            ctypes.windll.user32.keybd_event(0x45, 0, 0, 0)
-            time.sleep(0.04)
-            ctypes.windll.user32.keybd_event(0x45, 0, 2, 0)
-            time.sleep(0.1)
-
-            ctypes.windll.user32.keybd_event(0x1B, 0, 0, 0)
-            time.sleep(0.02)
-            ctypes.windll.user32.keybd_event(0x1B, 0, 2, 0)
-
-            QTimer.singleShot(200, self.check_final_result)
-
-    def check_final_result(self):
         current_clip = QGuiApplication.clipboard().text().strip()
         if current_clip and (current_clip.startswith("http://") or current_clip.startswith("https://")):
             self.add_url(current_clip)
@@ -270,6 +295,15 @@ class ConfigDialog(QDialog):
                     self.add_url(new_url)
                 else:
                     QMessageBox.information(self, "Увага", "Це посилання вже є у списку.")
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls() or event.mimeData().hasText() or event.mimeData().hasHtml():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent):
+        self.list_widget.dropEvent(event)
 
     def closeEvent(self, event):
         self.toggle_macro(False)
