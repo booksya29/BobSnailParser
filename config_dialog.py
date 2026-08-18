@@ -163,7 +163,7 @@ class ConfigDialog(QDialog):
 
         now = time.time()
         if (ctrl_pressed and q_pressed) or f8_pressed:
-            if now - self.last_hotkey_time > 0.4:
+            if now - self.last_hotkey_time > 0.5:
                 self.last_hotkey_time = now
                 self.perform_cursor_copy()
 
@@ -184,29 +184,53 @@ class ConfigDialog(QDialog):
         ctypes.windll.user32.keybd_event(VK_CONTROL, 0, 2, 0)
         ctypes.windll.user32.keybd_event(VK_SHIFT, 0, 2, 0)
         ctypes.windll.user32.keybd_event(VK_MENU, 0, 2, 0)
-        time.sleep(0.04)
+        time.sleep(0.08)
 
         ctypes.windll.user32.mouse_event(0x0008, 0, 0, 0, 0)
+        time.sleep(0.04)
         ctypes.windll.user32.mouse_event(0x0010, 0, 0, 0, 0)
-        time.sleep(0.12)
+        time.sleep(0.25)
 
         for _ in range(5):
             ctypes.windll.user32.keybd_event(VK_DOWN, 0, 0, 0)
-            time.sleep(0.02)
+            time.sleep(0.04)
             ctypes.windll.user32.keybd_event(VK_DOWN, 0, 2, 0)
-            time.sleep(0.02)
+            time.sleep(0.04)
 
+        time.sleep(0.08)
         ctypes.windll.user32.keybd_event(VK_RETURN, 0, 0, 0)
-        time.sleep(0.02)
+        time.sleep(0.04)
         ctypes.windll.user32.keybd_event(VK_RETURN, 0, 2, 0)
-        time.sleep(0.05)
+        time.sleep(0.12)
 
         ctypes.windll.user32.keybd_event(VK_ESCAPE, 0, 0, 0)
+        time.sleep(0.02)
         ctypes.windll.user32.keybd_event(VK_ESCAPE, 0, 2, 0)
 
-        QTimer.singleShot(100, self.check_copied_result)
+        QTimer.singleShot(200, self.check_copied_result)
 
     def check_copied_result(self):
+        current_clip = QGuiApplication.clipboard().text().strip()
+        if current_clip and (current_clip.startswith("http://") or current_clip.startswith("https://")):
+            self.add_url(current_clip)
+        else:
+            ctypes.windll.user32.mouse_event(0x0008, 0, 0, 0, 0)
+            time.sleep(0.04)
+            ctypes.windll.user32.mouse_event(0x0010, 0, 0, 0, 0)
+            time.sleep(0.25)
+
+            ctypes.windll.user32.keybd_event(0x45, 0, 0, 0)
+            time.sleep(0.04)
+            ctypes.windll.user32.keybd_event(0x45, 0, 2, 0)
+            time.sleep(0.1)
+
+            ctypes.windll.user32.keybd_event(0x1B, 0, 0, 0)
+            time.sleep(0.02)
+            ctypes.windll.user32.keybd_event(0x1B, 0, 2, 0)
+
+            QTimer.singleShot(200, self.check_final_result)
+
+    def check_final_result(self):
         current_clip = QGuiApplication.clipboard().text().strip()
         if current_clip and (current_clip.startswith("http://") or current_clip.startswith("https://")):
             self.add_url(current_clip)
