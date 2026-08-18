@@ -59,15 +59,20 @@ async def ashan_parsing_one(page: Page, url: str):
     }
     await add_to_excel(data)
 
-async def ashan_parsing_all(page: Page):
+async def ashan_parsing_all(page: Page, on_progress=None):
     data = await read_json('ashan.json')
     if not data:
+        if on_progress:
+            on_progress(100)
         return
-    for item in data:
+    total = len(data)
+    for i, item in enumerate(data, start=1):
         try:
             await ashan_parsing_one(page, item)
         except Exception as e:
             print(f"Error parsing Ashan item {item}: {e}")
+        if on_progress:
+            on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
 
 async def test():

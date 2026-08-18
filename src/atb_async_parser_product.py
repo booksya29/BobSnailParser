@@ -56,13 +56,18 @@ async def atb_parsing(page: Page, url: str):
     }
     await add_to_excel(data_row)
 
-async def atb_all_parsing(page: Page):
+async def atb_all_parsing(page: Page, on_progress=None):
     url_list = await read_json('atb.json')
     if not url_list:
+        if on_progress:
+            on_progress(100)
         return
-    for url in url_list:
+    total = len(url_list)
+    for i, url in enumerate(url_list, start=1):
         try:
             await atb_parsing(page, url)
         except Exception as e:
             print(f"Error parsing ATB item {url}: {e}")
+        if on_progress:
+            on_progress(int((i / total) * 100))
         await asyncio.sleep(1)

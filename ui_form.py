@@ -26,18 +26,33 @@ class Ui_Widget(object):
         Widget.resize(1920, 1080)
         self.gridLayout = QGridLayout(Widget)
         self.gridLayout.setObjectName(u"gridLayout")
-        self.verticalLayout_2 = QVBoxLayout()
+        self.centralContainer = QWidget(Widget)
+        self.centralContainer.setObjectName(u"centralContainer")
+        self.centralContainer.setMinimumSize(QSize(600, 0))
+        self.centralContainer.setMaximumSize(QSize(700, 16777215))
+        self.verticalLayout_2 = QVBoxLayout(self.centralContainer)
+        self.verticalLayout_2.setSpacing(12)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
+        self.verticalLayout_2.setContentsMargins(0, 0, 0, 0)
         self.verticalLayout = QVBoxLayout()
+        self.verticalLayout.setSpacing(8)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.horizontalLayout = QHBoxLayout()
         self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.AshanLabel = QLabel(Widget)
+        self.AshanLabel = QLabel(self.centralContainer)
         self.AshanLabel.setObjectName(u"AshanLabel")
+        self.AshanLabel.setMinimumSize(QSize(70, 0))
 
         self.horizontalLayout.addWidget(self.AshanLabel)
 
-        self.AshanButton = QPushButton(Widget)
+        self.AshanProgressBar = QProgressBar(self.centralContainer)
+        self.AshanProgressBar.setObjectName(u"AshanProgressBar")
+        self.AshanProgressBar.setValue(0)
+        self.AshanProgressBar.setTextVisible(True)
+
+        self.horizontalLayout.addWidget(self.AshanProgressBar)
+
+        self.AshanButton = QPushButton(self.centralContainer)
         self.AshanButton.setObjectName(u"AshanButton")
 
         self.horizontalLayout.addWidget(self.AshanButton)
@@ -47,12 +62,20 @@ class Ui_Widget(object):
 
         self.horizontalLayout_3 = QHBoxLayout()
         self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
-        self.SilpoLabel = QLabel(Widget)
+        self.SilpoLabel = QLabel(self.centralContainer)
         self.SilpoLabel.setObjectName(u"SilpoLabel")
+        self.SilpoLabel.setMinimumSize(QSize(70, 0))
 
         self.horizontalLayout_3.addWidget(self.SilpoLabel)
 
-        self.SilpoButton = QPushButton(Widget)
+        self.SilpoProgressBar = QProgressBar(self.centralContainer)
+        self.SilpoProgressBar.setObjectName(u"SilpoProgressBar")
+        self.SilpoProgressBar.setValue(0)
+        self.SilpoProgressBar.setTextVisible(True)
+
+        self.horizontalLayout_3.addWidget(self.SilpoProgressBar)
+
+        self.SilpoButton = QPushButton(self.centralContainer)
         self.SilpoButton.setObjectName(u"SilpoButton")
 
         self.horizontalLayout_3.addWidget(self.SilpoButton)
@@ -62,12 +85,20 @@ class Ui_Widget(object):
 
         self.horizontalLayout_4 = QHBoxLayout()
         self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
-        self.ATBLabel = QLabel(Widget)
+        self.ATBLabel = QLabel(self.centralContainer)
         self.ATBLabel.setObjectName(u"ATBLabel")
+        self.ATBLabel.setMinimumSize(QSize(70, 0))
 
         self.horizontalLayout_4.addWidget(self.ATBLabel)
 
-        self.ATBButton = QPushButton(Widget)
+        self.ATBProgressBar = QProgressBar(self.centralContainer)
+        self.ATBProgressBar.setObjectName(u"ATBProgressBar")
+        self.ATBProgressBar.setValue(0)
+        self.ATBProgressBar.setTextVisible(True)
+
+        self.horizontalLayout_4.addWidget(self.ATBProgressBar)
+
+        self.ATBButton = QPushButton(self.centralContainer)
         self.ATBButton.setObjectName(u"ATBButton")
 
         self.horizontalLayout_4.addWidget(self.ATBButton)
@@ -77,12 +108,20 @@ class Ui_Widget(object):
 
         self.horizontalLayout_5 = QHBoxLayout()
         self.horizontalLayout_5.setObjectName(u"horizontalLayout_5")
-        self.FozzyLabel = QLabel(Widget)
+        self.FozzyLabel = QLabel(self.centralContainer)
         self.FozzyLabel.setObjectName(u"FozzyLabel")
+        self.FozzyLabel.setMinimumSize(QSize(70, 0))
 
         self.horizontalLayout_5.addWidget(self.FozzyLabel)
 
-        self.FozzyButton = QPushButton(Widget)
+        self.FozzyProgressBar = QProgressBar(self.centralContainer)
+        self.FozzyProgressBar.setObjectName(u"FozzyProgressBar")
+        self.FozzyProgressBar.setValue(0)
+        self.FozzyProgressBar.setTextVisible(True)
+
+        self.horizontalLayout_5.addWidget(self.FozzyProgressBar)
+
+        self.FozzyButton = QPushButton(self.centralContainer)
         self.FozzyButton.setObjectName(u"FozzyButton")
 
         self.horizontalLayout_5.addWidget(self.FozzyButton)
@@ -92,12 +131,20 @@ class Ui_Widget(object):
 
         self.horizontalLayout_6 = QHBoxLayout()
         self.horizontalLayout_6.setObjectName(u"horizontalLayout_6")
-        self.NovusLabel = QLabel(Widget)
+        self.NovusLabel = QLabel(self.centralContainer)
         self.NovusLabel.setObjectName(u"NovusLabel")
+        self.NovusLabel.setMinimumSize(QSize(70, 0))
 
         self.horizontalLayout_6.addWidget(self.NovusLabel)
 
-        self.NovusButton = QPushButton(Widget)
+        self.NovusProgressBar = QProgressBar(self.centralContainer)
+        self.NovusProgressBar.setObjectName(u"NovusProgressBar")
+        self.NovusProgressBar.setValue(0)
+        self.NovusProgressBar.setTextVisible(True)
+
+        self.horizontalLayout_6.addWidget(self.NovusProgressBar)
+
+        self.NovusButton = QPushButton(self.centralContainer)
         self.NovusButton.setObjectName(u"NovusButton")
 
         self.horizontalLayout_6.addWidget(self.NovusButton)
@@ -107,12 +154,20 @@ class Ui_Widget(object):
 
         self.horizontalLayout_7 = QHBoxLayout()
         self.horizontalLayout_7.setObjectName(u"horizontalLayout_7")
-        self.ForaLabel = QLabel(Widget)
+        self.ForaLabel = QLabel(self.centralContainer)
         self.ForaLabel.setObjectName(u"ForaLabel")
+        self.ForaLabel.setMinimumSize(QSize(70, 0))
 
         self.horizontalLayout_7.addWidget(self.ForaLabel)
 
-        self.ForaButton = QPushButton(Widget)
+        self.ForaProgressBar = QProgressBar(self.centralContainer)
+        self.ForaProgressBar.setObjectName(u"ForaProgressBar")
+        self.ForaProgressBar.setValue(0)
+        self.ForaProgressBar.setTextVisible(True)
+
+        self.horizontalLayout_7.addWidget(self.ForaProgressBar)
+
+        self.ForaButton = QPushButton(self.centralContainer)
         self.ForaButton.setObjectName(u"ForaButton")
 
         self.horizontalLayout_7.addWidget(self.ForaButton)
@@ -122,12 +177,20 @@ class Ui_Widget(object):
 
         self.horizontalLayout_8 = QHBoxLayout()
         self.horizontalLayout_8.setObjectName(u"horizontalLayout_8")
-        self.VarusLabel = QLabel(Widget)
+        self.VarusLabel = QLabel(self.centralContainer)
         self.VarusLabel.setObjectName(u"VarusLabel")
+        self.VarusLabel.setMinimumSize(QSize(70, 0))
 
         self.horizontalLayout_8.addWidget(self.VarusLabel)
 
-        self.VarusButton = QPushButton(Widget)
+        self.VarusProgressBar = QProgressBar(self.centralContainer)
+        self.VarusProgressBar.setObjectName(u"VarusProgressBar")
+        self.VarusProgressBar.setValue(0)
+        self.VarusProgressBar.setTextVisible(True)
+
+        self.horizontalLayout_8.addWidget(self.VarusProgressBar)
+
+        self.VarusButton = QPushButton(self.centralContainer)
         self.VarusButton.setObjectName(u"VarusButton")
 
         self.horizontalLayout_8.addWidget(self.VarusButton)
@@ -137,12 +200,20 @@ class Ui_Widget(object):
 
         self.horizontalLayout_9 = QHBoxLayout()
         self.horizontalLayout_9.setObjectName(u"horizontalLayout_9")
-        self.MetroLabel = QLabel(Widget)
+        self.MetroLabel = QLabel(self.centralContainer)
         self.MetroLabel.setObjectName(u"MetroLabel")
+        self.MetroLabel.setMinimumSize(QSize(70, 0))
 
         self.horizontalLayout_9.addWidget(self.MetroLabel)
 
-        self.MetroButton = QPushButton(Widget)
+        self.MetroProgressBar = QProgressBar(self.centralContainer)
+        self.MetroProgressBar.setObjectName(u"MetroProgressBar")
+        self.MetroProgressBar.setValue(0)
+        self.MetroProgressBar.setTextVisible(True)
+
+        self.horizontalLayout_9.addWidget(self.MetroProgressBar)
+
+        self.MetroButton = QPushButton(self.centralContainer)
         self.MetroButton.setObjectName(u"MetroButton")
 
         self.horizontalLayout_9.addWidget(self.MetroButton)
@@ -152,12 +223,20 @@ class Ui_Widget(object):
 
         self.horizontalLayout_10 = QHBoxLayout()
         self.horizontalLayout_10.setObjectName(u"horizontalLayout_10")
-        self.TavriaLabel = QLabel(Widget)
+        self.TavriaLabel = QLabel(self.centralContainer)
         self.TavriaLabel.setObjectName(u"TavriaLabel")
+        self.TavriaLabel.setMinimumSize(QSize(70, 0))
 
         self.horizontalLayout_10.addWidget(self.TavriaLabel)
 
-        self.TavriaButton = QPushButton(Widget)
+        self.TavriaProgressBar = QProgressBar(self.centralContainer)
+        self.TavriaProgressBar.setObjectName(u"TavriaProgressBar")
+        self.TavriaProgressBar.setValue(0)
+        self.TavriaProgressBar.setTextVisible(True)
+
+        self.horizontalLayout_10.addWidget(self.TavriaProgressBar)
+
+        self.TavriaButton = QPushButton(self.centralContainer)
         self.TavriaButton.setObjectName(u"TavriaButton")
 
         self.horizontalLayout_10.addWidget(self.TavriaButton)
@@ -168,20 +247,14 @@ class Ui_Widget(object):
 
         self.verticalLayout_2.addLayout(self.verticalLayout)
 
-        self.progressBar = QProgressBar(Widget)
-        self.progressBar.setObjectName(u"progressBar")
-        self.progressBar.setValue(0)
-        self.progressBar.setTextVisible(True)
-
-        self.verticalLayout_2.addWidget(self.progressBar)
-
-        self.StartButton = QPushButton(Widget)
+        self.StartButton = QPushButton(self.centralContainer)
         self.StartButton.setObjectName(u"StartButton")
+        self.StartButton.setMinimumSize(QSize(0, 36))
 
         self.verticalLayout_2.addWidget(self.StartButton)
 
 
-        self.gridLayout.addLayout(self.verticalLayout_2, 0, 0, 1, 1, Qt.AlignCenter)
+        self.gridLayout.addWidget(self.centralContainer, 0, 0, 1, 1, Qt.AlignCenter)
 
 
         self.retranslateUi(Widget)

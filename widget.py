@@ -18,7 +18,7 @@ SRC_DIR = Path(__file__).resolve().parent / "src"
 class Worker(QObject):
     finished = Signal()
     failed = Signal(str)
-    progress = Signal(int)
+    progress = Signal(str, int)
 
     def run(self):
         try:
@@ -33,20 +33,24 @@ class Worker(QObject):
             sys.path.insert(0, str(SRC_DIR))
 
         parsers = self._load_parsers()
-        total_shops = len(parsers)
-        if total_shops == 0:
+        if not parsers:
             return
 
-        completed_shops = 0
         from patchright.async_api import async_playwright
 
-        async def run_parser(parser, page):
-            nonlocal completed_shops
+        async def run_shop(shop_key, parser_func, page):
+            def on_progress(p):
+                self.progress.emit(shop_key, p)
+
+            on_progress(0)
             try:
-                await parser(page)
+                import inspect
+                if "on_progress" in inspect.signature(parser_func).parameters:
+                    await parser_func(page, on_progress=on_progress)
+                else:
+                    await parser_func(page)
             finally:
-                completed_shops += 1
-                self.progress.emit(int((completed_shops / total_shops) * 100))
+                on_progress(100)
 
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=False)
@@ -54,7 +58,7 @@ class Worker(QObject):
             try:
                 pages = await asyncio.gather(*(context.new_page() for _ in parsers))
                 results = await asyncio.gather(
-                    *(run_parser(parser, page) for parser, page in zip(parsers, pages)),
+                    *(run_shop(key, parser, page) for (key, parser), page in zip(parsers, pages)),
                     return_exceptions=True,
                 )
                 errors = [str(result) for result in results if isinstance(result, Exception)]
@@ -65,18 +69,19 @@ class Worker(QObject):
 
     @staticmethod
     def _load_parsers():
-        """Import backend modules without executing their standalone test runners."""
         if str(SRC_DIR) not in sys.path:
             sys.path.insert(0, str(SRC_DIR))
 
         module_names = (
-            ("atb_async_parser_product", "atb_all_parsing"),
-            ("ashan_parser_product", "ashan_parsing_all"),
-            ("novus_parser_product", "novus_parsing_all"),
-            ("fozzy_parser_product", "fozzy_parsing_all"),
-            ("fora_parser_product", "fora_parsing_all"),
-            ("tavria_parser_product", "tavria_parsing_all"),
-            ("silpo_parser_product", "silpo_parsing_all"),
+            ("atb", "atb_async_parser_product", "atb_all_parsing"),
+            ("ashan", "ashan_parser_product", "ashan_parsing_all"),
+            ("novus", "novus_parser_product", "novus_parsing_all"),
+            ("fozzy", "fozzy_parser_product", "fozzy_parsing_all"),
+            ("fora", "fora_parser_product", "fora_parsing_all"),
+            ("tavria", "tavria_parser_product", "tavria_parsing_all"),
+            ("silpo", "silpo_parser_product", "silpo_parsing_all"),
+            ("varus", "varus_parser_product", "varus_parsing_all"),
+            ("metro", "metro_[arser_product", "metro_parsing_all"),
         )
 
         original_run = asyncio.run
@@ -86,11 +91,11 @@ class Worker(QObject):
 
         try:
             asyncio.run = skip_standalone_runner
-            modules = [importlib.import_module(name) for name, _ in module_names]
+            modules = [importlib.import_module(name) for _, name, _ in module_names]
         finally:
             asyncio.run = original_run
 
-        return [getattr(module, function_name) for module, (_, function_name) in zip(modules, module_names)]
+        return [(key, getattr(module, function_name)) for module, (key, _, function_name) in zip(modules, module_names)]
 
 
 class Widget(QWidget):
@@ -101,12 +106,20 @@ class Widget(QWidget):
         self.ui = Ui_Widget()
         self.ui.setupUi(self)
 
-
         self.thread = None
         self.worker = None
 
-        self.progress_bar = self.ui.progressBar
-        self.progress_bar.setValue(0)
+        self.progress_bars = {
+            "ashan": self.ui.AshanProgressBar,
+            "silpo": self.ui.SilpoProgressBar,
+            "atb": self.ui.ATBProgressBar,
+            "fozzy": self.ui.FozzyProgressBar,
+            "novus": self.ui.NovusProgressBar,
+            "fora": self.ui.ForaProgressBar,
+            "varus": self.ui.VarusProgressBar,
+            "metro": self.ui.MetroProgressBar,
+            "tavria": self.ui.TavriaProgressBar,
+        }
 
         self.start_button = self.ui.StartButton
         self.start_button.clicked.connect(self.start_worker)
@@ -125,11 +138,17 @@ class Widget(QWidget):
         dialog = ConfigDialog(shop_name, json_filename, self)
         dialog.exec()
 
+    def update_progress(self, shop_key: str, value: int):
+        if shop_key in self.progress_bars:
+            self.progress_bars[shop_key].setValue(value)
+
     def start_worker(self):
         if self.thread is not None and self.thread.isRunning():
             return
 
-        self.progress_bar.setValue(0)
+        for pb in self.progress_bars.values():
+            pb.setValue(0)
+
         self.start_button.setEnabled(False)
         self.thread = QThread(self)
 
@@ -137,7 +156,7 @@ class Widget(QWidget):
         self.worker.moveToThread(self.thread)
 
         self.thread.started.connect(self.worker.run)
-        self.worker.progress.connect(self.progress_bar.setValue)
+        self.worker.progress.connect(self.update_progress)
 
         self.worker.finished.connect(self.thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
@@ -152,7 +171,6 @@ class Widget(QWidget):
         print(f"Parser error: {message}")
 
     def worker_finished(self):
-        self.progress_bar.setValue(100)
         self.start_button.setEnabled(True)
         self.thread = None
         self.worker = None
