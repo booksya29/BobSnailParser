@@ -1,0 +1,11 @@
+﻿__pycache__/
+*.py[cod]
+*.class
+.venv/
+venv/
+ENV/
+.idea/
+.vscode/
+.qtcreator/
+*.user
+*.log
