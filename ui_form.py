@@ -16,7 +16,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QGridLayout, QHBoxLayout, QLabel,
-    QPushButton, QSizePolicy, QVBoxLayout, QWidget)
+    QProgressBar, QPushButton, QSizePolicy, QVBoxLayout,
+    QWidget)
 
 class Ui_Widget(object):
     def setupUi(self, Widget):
@@ -166,6 +167,13 @@ class Ui_Widget(object):
 
 
         self.verticalLayout_2.addLayout(self.verticalLayout)
+
+        self.progressBar = QProgressBar(Widget)
+        self.progressBar.setObjectName(u"progressBar")
+        self.progressBar.setValue(0)
+        self.progressBar.setTextVisible(True)
+
+        self.verticalLayout_2.addWidget(self.progressBar)
 
         self.StartButton = QPushButton(Widget)
         self.StartButton.setObjectName(u"StartButton")

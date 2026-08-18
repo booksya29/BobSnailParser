@@ -18,6 +18,7 @@ SRC_DIR = Path(__file__).resolve().parent / "src"
 class Worker(QObject):
     finished = Signal()
     failed = Signal(str)
+    progress = Signal(int)
 
     def run(self):
         try:
@@ -28,12 +29,24 @@ class Worker(QObject):
             self.finished.emit()
 
     async def _parse_all_shops(self):
-        """Run every existing `*_parsing_all` backend function concurrently."""
         if str(SRC_DIR) not in sys.path:
             sys.path.insert(0, str(SRC_DIR))
 
         parsers = self._load_parsers()
+        total_shops = len(parsers)
+        if total_shops == 0:
+            return
+
+        completed_shops = 0
         from patchright.async_api import async_playwright
+
+        async def run_parser(parser, page):
+            nonlocal completed_shops
+            try:
+                await parser(page)
+            finally:
+                completed_shops += 1
+                self.progress.emit(int((completed_shops / total_shops) * 100))
 
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=False)
@@ -41,7 +54,7 @@ class Worker(QObject):
             try:
                 pages = await asyncio.gather(*(context.new_page() for _ in parsers))
                 results = await asyncio.gather(
-                    *(parser(page) for parser, page in zip(parsers, pages)),
+                    *(run_parser(parser, page) for parser, page in zip(parsers, pages)),
                     return_exceptions=True,
                 )
                 errors = [str(result) for result in results if isinstance(result, Exception)]
@@ -92,6 +105,9 @@ class Widget(QWidget):
         self.thread = None
         self.worker = None
 
+        self.progress_bar = self.ui.progressBar
+        self.progress_bar.setValue(0)
+
         self.start_button = self.ui.StartButton
         self.start_button.clicked.connect(self.start_worker)
 
@@ -113,26 +129,21 @@ class Widget(QWidget):
         if self.thread is not None and self.thread.isRunning():
             return
 
+        self.progress_bar.setValue(0)
         self.start_button.setEnabled(False)
         self.thread = QThread(self)
 
-
         self.worker = Worker()
-
-
         self.worker.moveToThread(self.thread)
 
-
         self.thread.started.connect(self.worker.run)
+        self.worker.progress.connect(self.progress_bar.setValue)
 
         self.worker.finished.connect(self.thread.quit)
-
         self.worker.finished.connect(self.worker.deleteLater)
-
         self.worker.failed.connect(self.show_error)
 
         self.thread.finished.connect(self.thread.deleteLater)
-
         self.thread.finished.connect(self.worker_finished)
 
         self.thread.start()
@@ -141,6 +152,7 @@ class Widget(QWidget):
         print(f"Parser error: {message}")
 
     def worker_finished(self):
+        self.progress_bar.setValue(100)
         self.start_button.setEnabled(True)
         self.thread = None
         self.worker = None

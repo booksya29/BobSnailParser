@@ -9,3 +9,4 @@ ENV/
 .qtcreator/
 *.user
 *.log
+~$*.xlsx
