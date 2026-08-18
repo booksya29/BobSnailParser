@@ -57,12 +57,13 @@ class ConfigDialog(QDialog):
         self.file_path = BASE_DIR / self.json_filename
         self.urls = []
         self.last_clipboard = ""
+        self.last_hotkey_time = 0
 
         self.setWindowTitle(f"Конфігурація - {self.shop_name}")
-        self.resize(700, 520)
+        self.resize(720, 530)
 
         self.poll_timer = QTimer(self)
-        self.poll_timer.setInterval(150)
+        self.poll_timer.setInterval(120)
         self.poll_timer.timeout.connect(self.on_timer_tick)
 
         self.setup_ui()
@@ -73,7 +74,7 @@ class ConfigDialog(QDialog):
 
         top_layout = QHBoxLayout()
 
-        self.macro_button = QPushButton("Макрос", self)
+        self.macro_button = QPushButton("Макрос (Ctrl+Q)", self)
         self.macro_button.setCheckable(True)
         self.macro_button.setFixedHeight(32)
         self.macro_button.toggled.connect(self.toggle_macro)
@@ -140,11 +141,11 @@ class ConfigDialog(QDialog):
     def toggle_macro(self, checked: bool):
         if checked:
             self.macro_button.setText("Макрос (активний)")
-            self.status_label.setText("Макрос увімкнено: натисніть F8 над товаром або скопіюйте посилання")
+            self.status_label.setText("Макрос увімкнено: натисніть Ctrl+Q над посиланням або скопіюйте URL")
             self.last_clipboard = QGuiApplication.clipboard().text().strip()
             self.poll_timer.start()
         else:
-            self.macro_button.setText("Макрос")
+            self.macro_button.setText("Макрос (Ctrl+Q)")
             self.status_label.setText("")
             self.poll_timer.stop()
 
@@ -152,9 +153,15 @@ class ConfigDialog(QDialog):
         if not self.macro_button.isChecked():
             return
 
-        VK_F8 = 0x77
-        if ctypes.windll.user32.GetAsyncKeyState(VK_F8) & 0x8000:
-            self.trigger_cursor_copy()
+        VK_CONTROL = 0x11
+        VK_Q = 0x51
+        ctrl_pressed = bool(ctypes.windll.user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
+        q_pressed = bool(ctypes.windll.user32.GetAsyncKeyState(VK_Q) & 0x8000)
+
+        now = time.time()
+        if ctrl_pressed and q_pressed and (now - self.last_hotkey_time > 0.4):
+            self.last_hotkey_time = now
+            self.trigger_copy()
 
         current_clip = QGuiApplication.clipboard().text().strip()
         if current_clip and current_clip != self.last_clipboard:
@@ -162,49 +169,16 @@ class ConfigDialog(QDialog):
             if current_clip.startswith("http://") or current_clip.startswith("https://"):
                 self.add_url(current_clip)
 
-    def trigger_cursor_copy(self):
-        MOUSEEVENTF_RIGHTDOWN = 0x0008
-        MOUSEEVENTF_RIGHTUP = 0x0010
-        VK_ESCAPE = 0x1B
+    def trigger_copy(self):
+        ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(0x43, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(0x43, 0, 2, 0)
+        ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)
+        QTimer.singleShot(80, self.check_clipboard)
 
-        ctypes.windll.user32.mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
-        ctypes.windll.user32.mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
-        time.sleep(0.08)
-
-        ctypes.windll.user32.keybd_event(0x45, 0, 0, 0)
-        ctypes.windll.user32.keybd_event(0x45, 0, 2, 0)
-        time.sleep(0.05)
-
-        ctypes.windll.user32.keybd_event(VK_ESCAPE, 0, 0, 0)
-        ctypes.windll.user32.keybd_event(VK_ESCAPE, 0, 2, 0)
-
-        QTimer.singleShot(150, self.check_clipboard_after_trigger)
-
-    def check_clipboard_after_trigger(self):
+    def check_clipboard(self):
         current_clip = QGuiApplication.clipboard().text().strip()
-        if current_clip.startswith("http://") or current_clip.startswith("https://"):
-            self.add_url(current_clip)
-        else:
-            ctypes.windll.user32.keybd_event(0x12, 0, 0, 0)
-            ctypes.windll.user32.keybd_event(0x44, 0, 0, 0)
-            ctypes.windll.user32.keybd_event(0x44, 0, 2, 0)
-            ctypes.windll.user32.keybd_event(0x12, 0, 2, 0)
-            time.sleep(0.05)
-
-            ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)
-            ctypes.windll.user32.keybd_event(0x43, 0, 0, 0)
-            ctypes.windll.user32.keybd_event(0x43, 0, 2, 0)
-            ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)
-            time.sleep(0.05)
-
-            ctypes.windll.user32.keybd_event(0x1B, 0, 0, 0)
-            ctypes.windll.user32.keybd_event(0x1B, 0, 2, 0)
-
-            QTimer.singleShot(150, self.check_final_clip)
-
-    def check_final_clip(self):
-        current_clip = QGuiApplication.clipboard().text().strip()
-        if current_clip.startswith("http://") or current_clip.startswith("https://"):
+        if current_clip and (current_clip.startswith("http://") or current_clip.startswith("https://")):
             self.add_url(current_clip)
 
     def add_url(self, url: str):
