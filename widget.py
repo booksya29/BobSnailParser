@@ -1,18 +1,27 @@
 # This Python file uses the following encoding: utf-8
 
 import asyncio
-import importlib
 import sys
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication, QWidget, QMessageBox
 from PySide6.QtCore import QObject, QThread, Signal
 
 from ui_form import Ui_Widget
 from config_dialog import ConfigDialog
 
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).resolve().parent
+    MEIPASS_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
+    SRC_DIR = MEIPASS_DIR / "src"
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+    SRC_DIR = BASE_DIR / "src"
 
-SRC_DIR = Path(__file__).resolve().parent / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
 
 class Worker(QObject):
@@ -72,30 +81,27 @@ class Worker(QObject):
         if str(SRC_DIR) not in sys.path:
             sys.path.insert(0, str(SRC_DIR))
 
-        module_names = (
-            ("atb", "atb_async_parser_product", "atb_all_parsing"),
-            ("ashan", "ashan_parser_product", "ashan_parsing_all"),
-            ("novus", "novus_parser_product", "novus_parsing_all"),
-            ("fozzy", "fozzy_parser_product", "fozzy_parsing_all"),
-            ("fora", "fora_parser_product", "fora_parsing_all"),
-            ("tavria", "tavria_parser_product", "tavria_parsing_all"),
-            ("silpo", "silpo_parser_product", "silpo_parsing_all"),
-            ("varus", "varus_parser_product", "varus_parsing_all"),
-            ("metro", "metro_[arser_product", "metro_parsing_all"),
-        )
+        import atb_async_parser_product
+        import ashan_parser_product
+        import novus_parser_product
+        import fozzy_parser_product
+        import fora_parser_product
+        import tavria_parser_product
+        import silpo_parser_product
+        import varus_parser_product
+        import metro_parser_product
 
-        original_run = asyncio.run
-
-        def skip_standalone_runner(coroutine):
-            coroutine.close()
-
-        try:
-            asyncio.run = skip_standalone_runner
-            modules = [importlib.import_module(name) for _, name, _ in module_names]
-        finally:
-            asyncio.run = original_run
-
-        return [(key, getattr(module, function_name)) for module, (key, _, function_name) in zip(modules, module_names)]
+        return [
+            ("atb", getattr(atb_async_parser_product, "atb_all_parsing")),
+            ("ashan", getattr(ashan_parser_product, "ashan_parsing_all")),
+            ("novus", getattr(novus_parser_product, "novus_parsing_all")),
+            ("fozzy", getattr(fozzy_parser_product, "fozzy_parsing_all")),
+            ("fora", getattr(fora_parser_product, "fora_parsing_all")),
+            ("tavria", getattr(tavria_parser_product, "tavria_parsing_all")),
+            ("silpo", getattr(silpo_parser_product, "silpo_parsing_all")),
+            ("varus", getattr(varus_parser_product, "varus_parsing_all")),
+            ("metro", getattr(metro_parser_product, "metro_parsing_all")),
+        ]
 
 
 class Widget(QWidget):
@@ -169,6 +175,7 @@ class Widget(QWidget):
 
     def show_error(self, message):
         print(f"Parser error: {message}")
+        QMessageBox.critical(self, "Помилка", f"Помилка під час запуску парсерів:\n{message}")
 
     def worker_finished(self):
         self.start_button.setEnabled(True)

@@ -1,10 +1,16 @@
 import asyncio
 import os
+import sys
 from pathlib import Path
 import pandas
 
-file_name = Path(__file__).resolve().parent.parent / 'data.xlsx'
+if getattr(sys, "frozen", False):
+    file_name = Path(sys.executable).resolve().parent / "data.xlsx"
+else:
+    file_name = Path(__file__).resolve().parent.parent / "data.xlsx"
+
 _excel_lock = asyncio.Lock()
+
 
 async def add_to_excel(data: dict):
     if not data or not isinstance(data, dict):

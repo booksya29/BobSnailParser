@@ -20,7 +20,10 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-BASE_DIR = Path(__file__).resolve().parent / "src" / "urls_db"
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).resolve().parent / "src" / "urls_db"
+else:
+    BASE_DIR = Path(__file__).resolve().parent / "src" / "urls_db"
 
 ole32 = ctypes.windll.ole32
 user32 = ctypes.windll.user32
