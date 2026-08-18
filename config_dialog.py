@@ -3,6 +3,7 @@ from ctypes import wintypes, byref, c_void_p, Structure, POINTER, WINFUNCTYPE, H
 import json
 import os
 import re
+import sys
 import time
 import winsound
 from pathlib import Path
