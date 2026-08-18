@@ -59,7 +59,7 @@ class ConfigDialog(QDialog):
         self.last_clipboard = ""
 
         self.setWindowTitle(f"Конфігурація - {self.shop_name}")
-        self.resize(720, 530)
+        self.resize(700, 520)
 
         self.poll_timer = QTimer(self)
         self.poll_timer.setInterval(150)
@@ -73,7 +73,7 @@ class ConfigDialog(QDialog):
 
         top_layout = QHBoxLayout()
 
-        self.macro_button = QPushButton("⚡ Макрос авто-захоплення (F8)", self)
+        self.macro_button = QPushButton("Макрос", self)
         self.macro_button.setCheckable(True)
         self.macro_button.setFixedHeight(32)
         self.macro_button.toggled.connect(self.toggle_macro)
@@ -81,7 +81,7 @@ class ConfigDialog(QDialog):
 
         top_layout.addStretch()
 
-        self.delete_button = QPushButton("Видалити обране", self)
+        self.delete_button = QPushButton("Видалити", self)
         self.delete_button.setFixedHeight(32)
         self.delete_button.clicked.connect(self.delete_selected)
         top_layout.addWidget(self.delete_button)
@@ -94,7 +94,7 @@ class ConfigDialog(QDialog):
         main_layout.addLayout(top_layout)
 
         self.search_input = QLineEdit(self)
-        self.search_input.setPlaceholderText("Пошук посилання...")
+        self.search_input.setPlaceholderText("Пошук...")
         self.search_input.textChanged.connect(self.filter_urls)
         main_layout.addWidget(self.search_input)
 
@@ -102,7 +102,7 @@ class ConfigDialog(QDialog):
         main_layout.addWidget(self.list_widget)
 
         self.status_label = QLabel(self)
-        self.status_label.setStyleSheet("color: #2e7d32; font-weight: bold; font-size: 11px;")
+        self.status_label.setStyleSheet("color: #888888; font-size: 11px;")
         main_layout.addWidget(self.status_label)
 
     def load_urls(self):
@@ -139,12 +139,12 @@ class ConfigDialog(QDialog):
 
     def toggle_macro(self, checked: bool):
         if checked:
-            self.macro_button.setText("🟢 Макрос активний (Натисніть F8 над товаром або Скопіюйте URL)")
-            self.status_label.setText("Режим активний: наведіть курсор на товар і натисніть F8 (або скопіюйте посилання)")
+            self.macro_button.setText("Макрос (активний)")
+            self.status_label.setText("Макрос увімкнено: натисніть F8 над товаром або скопіюйте посилання")
             self.last_clipboard = QGuiApplication.clipboard().text().strip()
             self.poll_timer.start()
         else:
-            self.macro_button.setText("⚡ Макрос авто-захоплення (F8)")
+            self.macro_button.setText("Макрос")
             self.status_label.setText("")
             self.poll_timer.stop()
 
@@ -213,13 +213,13 @@ class ConfigDialog(QDialog):
             self.save_urls()
             self.load_urls()
             self.filter_urls(self.search_input.text())
-            self.status_label.setText(f"✓ Додано: {url}")
+            self.status_label.setText(f"Додано: {url}")
             try:
                 winsound.MessageBeep(winsound.MB_OK)
             except Exception:
                 pass
         else:
-            self.status_label.setText(f"ℹ Вже є у списку: {url}")
+            self.status_label.setText(f"Вже є у списку: {url}")
 
     def delete_selected(self):
         current_item = self.list_widget.currentItem()
