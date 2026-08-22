@@ -2,7 +2,11 @@ import subprocess
 import shutil
 import os
 import sys
+import io
 from pathlib import Path
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 ROOT = Path(__file__).resolve().parent
 DIST_DIR = ROOT / "dist" / "BobSnailParser"

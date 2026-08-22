@@ -7,7 +7,8 @@ from excel_add import add_to_excel
 def clean_p(v):
     if not v or v == '-' or v == 0 or v == '0':
         return '-'
-    m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+    s = re.sub(r'\s+', '', str(v).replace('\xa0', ' '))
+    m = re.search(r'\d+[\.,]\d{2}|\d+', s)
     return m.group(0).replace(',', '.') if m else str(v).strip()
 
 def clean_prod(v):
@@ -25,7 +26,6 @@ async def check_in_stock(page: Page) -> bool:
                 'немає на складі',
                 'товар закінчився',
                 'цей товар закінчився',
-                'закінчився',
                 'повідомити про наявність',
                 'повідомити, коли з’явиться',
                 'повідомити коли з’явиться',
@@ -44,7 +44,7 @@ async def check_in_stock(page: Page) -> bool:
 
 async def varus_parsing_one(page: Page, url: str):
     try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=25000)
+        await page.goto(url, wait_until='domcontentloaded', timeout=30000)
     except TimeoutError:
         print(f"Can't load {url}")
         return
@@ -52,11 +52,12 @@ async def varus_parsing_one(page: Page, url: str):
         print(f"Error navigating to {url}: {e}")
         return
 
+    # 1. Hydrate Title (up to 6s)
     product_name = '-'
-    for _ in range(10):
+    for _ in range(30):
         try:
-            h1 = await page.locator('h1, div[class*="product__header"]').first.text_content(timeout=1000)
-            if h1 and h1.strip():
+            h1 = await page.locator('h1, div.product__header').first.text_content(timeout=500)
+            if h1 and h1.strip() and len(h1.strip()) > 3 and 'varus.ua' not in h1.lower():
                 product_name = h1.strip()
                 break
         except Exception:
@@ -71,32 +72,37 @@ async def varus_parsing_one(page: Page, url: str):
     if product_name == '-':
         try:
             t = await page.title()
-            if t:
+            if t and 'varus.ua' not in t.lower():
                 product_name = re.split(r' - | \| | купити', t)[0].strip()
         except Exception:
             product_name = '-'
 
-    container = page.locator('div.m-product-short-info__price-section, div.m-product-mini-details__price, div.product-page__price, div.sf-price, main').first
-
+    # 2. Extract Prices
     price = '-'
     sale_price = '-'
     try:
-        del_el = container.locator('del')
-        ins_el = container.locator('ins')
-        reg_el = container.locator('span.sf-price__regular, div.sf-price, span, div')
-        has_old_v = await del_el.count() > 0
-        old_v = await del_el.first.text_content(timeout=1000) if has_old_v else '-'
-        act_v = await ins_el.first.text_content(timeout=1000) if await ins_el.count() > 0 else (await reg_el.first.text_content(timeout=1000) if await reg_el.count() > 0 else '-')
-        if has_old_v and old_v != '-' and 'закінчився' not in old_v.lower():
-            price = old_v
-            sale_price = act_v
+        res = await page.evaluate('''() => {
+            const delEl = document.querySelector('div.m-product-short-info__price-section del, div.product-page__price del, del.sf-price__old, del');
+            const insEl = document.querySelector('div.m-product-short-info__price-section ins, div.product-page__price ins, ins.sf-price__special, ins');
+            const regEl = document.querySelector('div.m-product-short-info__price-section span.sf-price__regular, div.product-page__price .sf-price, span.sf-price__regular');
+            return {
+                old: delEl ? delEl.innerText : null,
+                act: insEl ? insEl.innerText : (regEl ? regEl.innerText : null)
+            };
+        }''')
+        old_p = res.get('old')
+        act_p = res.get('act')
+        if old_p and old_p != '-' and 'закінчився' not in str(old_p).lower():
+            price = old_p
+            sale_price = act_p if act_p else '-'
         else:
-            price = act_v
+            price = act_p if act_p else '-'
             sale_price = '-'
     except Exception:
         price = '-'
         sale_price = '-'
 
+    # 3. Extract Producer
     producer = '-'
     try:
         raw_producer = await page.locator('div[class*="characteristics"], div', has_text=re.compile(r'Бренд|Торгова марка|Виробник', re.I)).first.locator('div').nth(1).text_content(timeout=1000)

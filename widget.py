@@ -85,10 +85,15 @@ class Worker(QObject):
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(
                 headless=False,
-                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--window-position=-2000,-2000",
+                    "--window-size=1280,800"
+                ]
             )
             context = await browser.new_context(
-                viewport={"height": 1, "width": 1}
+                viewport={"width": 1280, "height": 800}
             )
             try:
                 semaphore = asyncio.Semaphore(3)

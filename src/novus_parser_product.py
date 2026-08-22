@@ -7,7 +7,8 @@ from excel_add import add_to_excel
 def clean_p(v):
     if not v or v == '-' or v == 0 or v == '0':
         return '-'
-    m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+    s = re.sub(r'\s+', '', str(v).replace('\xa0', ' '))
+    m = re.search(r'\d+[\.,]\d{2}|\d+', s)
     return m.group(0).replace(',', '.') if m else str(v).strip()
 
 def clean_prod(v):

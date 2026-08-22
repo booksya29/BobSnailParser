@@ -7,7 +7,8 @@ from json_manager import read_json
 def clean_p(v):
     if not v or v == '-' or v == 0 or v == '0':
         return '-'
-    m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+    s = re.sub(r'\s+', '', str(v).replace('\xa0', ' '))
+    m = re.search(r'\d+[\.,]\d{2}|\d+', s)
     return m.group(0).replace(',', '.') if m else str(v).strip()
 
 def clean_prod(v):
@@ -44,7 +45,7 @@ async def check_in_stock(page: Page) -> bool:
 
 async def tavria_parsing_one(page: Page, url: str):
     try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=25000)
+        await page.goto(url, wait_until='domcontentloaded', timeout=30000)
     except TimeoutError:
         print(f"Can't load {url}")
         return
@@ -52,11 +53,12 @@ async def tavria_parsing_one(page: Page, url: str):
         print(f"Error navigating to {url}: {e}")
         return
 
+    # 1. Hydrate Title (up to 6s)
     product_name = '-'
-    for _ in range(10):
+    for _ in range(30):
         try:
-            h1 = await page.locator('h1').first.text_content(timeout=1000)
-            if h1 and h1.strip():
+            h1 = await page.locator('h1').first.text_content(timeout=500)
+            if h1 and h1.strip() and len(h1.strip()) > 3:
                 product_name = h1.strip()
                 break
         except Exception:
@@ -76,11 +78,14 @@ async def tavria_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
+    container = page.locator('div[class*="product-detail"], div.product-page, main, body').first
+    actions_price = container.locator('div[class*="cart__actions__price"], div[class*="actions__price"]').first
+
     price = '-'
     sale_price = '-'
     try:
-        old_el = page.locator('p.prod-crossed-out__price__old:not([class*="before"]), p[class="prod-crossed-out__price__old"]')
-        base_el = page.locator('p.base__price')
+        old_el = actions_price.locator('p.prod-crossed-out__price__old:not([class*="before"]), p[class="prod-crossed-out__price__old"]')
+        base_el = actions_price.locator('p.base__price')
         has_old = await old_el.count() > 0
         old_price = await old_el.first.text_content(timeout=1000) if has_old else '-'
         base_price = await base_el.first.text_content(timeout=1000) if await base_el.count() > 0 else '-'
@@ -96,8 +101,8 @@ async def tavria_parsing_one(page: Page, url: str):
 
     producer = '-'
     try:
-        producer_el = page.locator('table tr, div[class*="feature"]', has_text=re.compile(r'Бренд|Торгова марка|Виробник', re.I)).first
-        raw_producer = await producer_el.text_content(timeout=2000)
+        producer_el = container.locator('table tr, div[class*="feature"]', has_text=re.compile(r'Бренд|Торгова марка|Виробник', re.I)).first
+        raw_producer = await producer_el.text_content(timeout=1000)
         if raw_producer and (":" in raw_producer or "\n" in raw_producer):
             parts = re.split(r'[:\n]+', raw_producer)
             producer = parts[-1].strip() if len(parts) > 1 else raw_producer.strip()

@@ -7,7 +7,8 @@ from json_manager import read_json
 def clean_p(v):
     if not v or v == '-' or v == 0 or v == '0':
         return '-'
-    m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+    s = re.sub(r'\s+', '', str(v).replace('\xa0', ' '))
+    m = re.search(r'\d+[\.,]\d{2}|\d+', s)
     return m.group(0).replace(',', '.') if m else str(v).strip()
 
 def clean_prod(v):
@@ -44,7 +45,7 @@ async def check_in_stock(page: Page) -> bool:
 
 async def atb_parsing(page: Page, url: str):
     try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=25000)
+        await page.goto(url, wait_until='domcontentloaded', timeout=30000)
     except TimeoutError:
         print(f"Can't load {url}")
         return
@@ -52,11 +53,12 @@ async def atb_parsing(page: Page, url: str):
         print(f"Error navigating to {url}: {e}")
         return
 
+    # 1. Hydrate Title (up to 6s)
     product_name = '-'
-    for _ in range(10):
+    for _ in range(30):
         try:
-            h1 = await page.locator('h1').first.text_content(timeout=1000)
-            if h1 and h1.strip():
+            h1 = await page.locator('h1').first.text_content(timeout=500)
+            if h1 and h1.strip() and len(h1.strip()) > 3:
                 product_name = h1.strip()
                 break
         except Exception:
@@ -76,31 +78,32 @@ async def atb_parsing(page: Page, url: str):
         except Exception:
             product_name = '-'
 
-    container = page.locator('div.js-product-container, div.cardproduct-popup, div[class*="product-about"], main').first
-
     price = '-'
     sale_price = '-'
     try:
-        price_block = container.locator('div.product-price, div[class*="product-price"]').first
-        is_sale = await price_block.locator('div[class*="product-price--sale"], div.product-price--sale').count() > 0 or await container.locator('div[class*="product-price--sale"]').count() > 0
-        top_el = price_block.locator('data.product-price__top, [class*="product-price__top"], data, span.product-price__coin')
-        bot_el = price_block.locator('data.product-price__bottom, [class*="product-price__bottom"]')
-        top_p = await top_el.first.text_content(timeout=1000) if await top_el.count() > 0 else '-'
-        bot_p = await bot_el.first.text_content(timeout=1000) if await bot_el.count() > 0 else '-'
-        raw_p = await price_block.text_content(timeout=1000) if await price_block.count() > 0 else '-'
+        res = await page.evaluate('''() => {
+            const pb = document.querySelector('div.product-about__price, div.product-price');
+            if (!pb) return { isSale: false, top: null, bot: null, text: null };
+            const isSale = pb.classList.contains('product-price--sale') || !!pb.querySelector('.product-price--sale');
+            const top = pb.querySelector('.product-price__top, data');
+            const bot = pb.querySelector('.product-price__bottom');
+            return {
+                isSale,
+                top: top ? top.innerText : null,
+                bot: bot ? bot.innerText : null,
+                text: pb.innerText
+            };
+        }''')
+        is_sale = res.get('isSale', False)
+        top_p = res.get('top')
+        bot_p = res.get('bot')
+        raw_t = res.get('text')
         
         if is_sale:
-            price = bot_p if bot_p != '-' else top_p
-            sale_price = top_p if bot_p != '-' else '-'
+            price = bot_p if bot_p else top_p
+            sale_price = top_p if bot_p else '-'
         else:
-            if top_p != '-':
-                price = top_p
-            elif bot_p != '-':
-                price = bot_p
-            elif raw_p != '-':
-                price = raw_p
-            else:
-                price = '-'
+            price = top_p if top_p else (raw_t if raw_t else '-')
             sale_price = '-'
     except Exception:
         price = '-'

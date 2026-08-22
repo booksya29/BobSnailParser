@@ -7,7 +7,8 @@ from patchright.async_api import Page, TimeoutError, async_playwright
 def clean_p(v):
     if not v or v == '-' or v == 0 or v == '0':
         return '-'
-    m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+    s = re.sub(r'\s+', '', str(v).replace('\xa0', ' '))
+    m = re.search(r'\d+[\.,]\d{2}|\d+', s)
     return m.group(0).replace(',', '.') if m else str(v).strip()
 
 def clean_prod(v):
@@ -44,7 +45,7 @@ async def check_in_stock(page: Page) -> bool:
 
 async def ashan_parsing_one(page: Page, url: str):
     try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=25000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
     except TimeoutError:
         print(f"Can't connect to {url}")
         return
@@ -52,11 +53,12 @@ async def ashan_parsing_one(page: Page, url: str):
         print(f"Error navigating to {url}: {e}")
         return
 
+    # 1. Hydrate Title (up to 6s)
     product_name = '-'
-    for _ in range(10):
+    for _ in range(30):
         try:
-            h1 = await page.locator('h1').first.text_content(timeout=1000)
-            if h1 and h1.strip():
+            h1 = await page.locator('h1').first.text_content(timeout=500)
+            if h1 and h1.strip() and len(h1.strip()) > 3:
                 product_name = h1.strip()
                 break
         except Exception:
