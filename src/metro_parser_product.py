@@ -81,10 +81,11 @@ async def metro_parsing_one(page: Page, url: str):
     producer = '-'
 
     if "zakaz.ua" in url:
-        container = page.locator('div[data-marker="Big Product Cart"], div[class*="BigProductCard"], main').first
+        container = page.locator('div[data-marker="Big Product Cart"], div[class*="BigProductCard"], main, body').first
+        price_info = container.locator('div[class*="BigProductCardTopInfo__priceInfo"], div[data-marker="Big Product Cart"]').first
         try:
-            old_el = container.locator('span[data-marker="Old Price"], div[data-marker="Old Price"]')
-            act_el = container.locator('span[data-marker="Discounted Price"], span[data-marker="Price"]')
+            old_el = price_info.locator('span[data-marker="Old Price"], div[data-marker="Old Price"]')
+            act_el = price_info.locator('span[data-marker="Discounted Price"], span[data-marker="Price"], div[data-marker="Discounted Price"], div[data-marker="Price"]')
             has_old = await old_el.count() > 0
             old_val = await old_el.first.text_content(timeout=1000) if has_old else '-'
             act_val = await act_el.first.text_content(timeout=1000) if await act_el.count() > 0 else '-'
@@ -100,7 +101,7 @@ async def metro_parsing_one(page: Page, url: str):
             sale_price = '-'
 
         try:
-            raw_producer = await container.locator('li[data-marker*="tm"], li', has_text=re.compile(r'Бренд|ТМ|Виробник', re.I)).first.text_content(timeout=1000)
+            raw_producer = await page.locator('li[data-marker*="tm"], li', has_text=re.compile(r'Бренд|ТМ|Виробник', re.I)).first.text_content(timeout=1000)
             if raw_producer and (":" in raw_producer or "\n" in raw_producer):
                 parts = re.split(r'[:\n]+', raw_producer)
                 producer = parts[-1].strip() if len(parts) > 1 else raw_producer.strip()
