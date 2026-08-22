@@ -4,6 +4,44 @@ from patchright.async_api import async_playwright, Page, TimeoutError
 from json_manager import read_json
 from excel_add import add_to_excel
 
+def clean_p(v):
+    if not v or v == '-' or v == 0 or v == '0':
+        return '-'
+    m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+    return m.group(0).replace(',', '.') if m else str(v).strip()
+
+def clean_prod(v):
+    if not v or v == '-' or v == 'NULL':
+        return '-'
+    cleaned = re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', str(v), flags=re.I).strip()
+    return cleaned if len(cleaned) <= 40 else '-'
+
+async def check_in_stock(page: Page) -> bool:
+    try:
+        res = await page.evaluate('''() => {
+            const body = (document.body.innerText || '').toLowerCase();
+            const markers = [
+                'немає в наявності',
+                'немає на складі',
+                'товар закінчився',
+                'цей товар закінчився',
+                'закінчився',
+                'повідомити про наявність',
+                'повідомити, коли з’явиться',
+                'повідомити коли з’явиться',
+                'тимчасово відсутній'
+            ];
+            for (const m of markers) {
+                if (body.includes(m)) return false;
+            }
+            const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
+            if (outEl) return false;
+            return true;
+        }''')
+        return bool(res)
+    except Exception:
+        return True
+
 async def novus_parsing_one(page: Page, url: str):
     try:
         await page.goto(url, wait_until='domcontentloaded', timeout=25000)
@@ -25,6 +63,11 @@ async def novus_parsing_one(page: Page, url: str):
             pass
         await asyncio.sleep(0.2)
 
+    in_stock = await check_in_stock(page)
+    if not in_stock:
+        print(f"[Новус] Товар відсутній в наявності: {url} - пропуск.")
+        return
+
     if product_name == '-':
         try:
             t = await page.title()
@@ -36,22 +79,18 @@ async def novus_parsing_one(page: Page, url: str):
     price = '-'
     sale_price = '-'
     try:
-        raw_old = await page.locator('span[data-marker="Old Price"]').first.text_content(timeout=2000)
-        old_val = raw_old.replace('\xa0грн', '').replace('грн', '').strip() if raw_old else '-'
+        has_old = await page.locator('span[data-marker="Old Price"], div[data-marker="Old Price"]').count() > 0
+        old_val = await page.locator('span[data-marker="Old Price"], div[data-marker="Old Price"]').first.text_content(timeout=1000) if has_old else '-'
+        act_val = await page.locator('span[data-marker="Discounted Price"], span[data-marker="Price"], div[data-marker="Discounted Price"], div[data-marker="Price"]').first.text_content(timeout=1000) if await page.locator('span[data-marker="Discounted Price"], span[data-marker="Price"], div[data-marker="Discounted Price"], div[data-marker="Price"]').count() > 0 else '-'
+        
+        if has_old and old_val and old_val != '-':
+            price = old_val
+            sale_price = act_val
+        else:
+            price = act_val
+            sale_price = '-'
     except Exception:
-        old_val = '-'
-
-    try:
-        raw_sale = await page.locator('span[data-marker="Discounted Price"], span[data-marker="Price"]').first.text_content(timeout=2000)
-        act_val = raw_sale.replace('\xa0грн', '').replace('грн', '').strip() if raw_sale else '-'
-    except Exception:
-        act_val = '-'
-
-    if old_val and old_val != '-':
-        price = old_val
-        sale_price = act_val
-    else:
-        price = act_val
+        price = '-'
         sale_price = '-'
 
     producer = '-'
@@ -65,18 +104,12 @@ async def novus_parsing_one(page: Page, url: str):
     except Exception:
         producer = '-'
 
-    def clean_p(v):
-        if not v or v == '-':
-            return '-'
-        m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
-        return m.group(0).replace(',', '.') if m else str(v).strip()
-
     data = {
         'shop': 'Новус',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
-        'producer': re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', producer, flags=re.I).strip() or '-',
+        'producer': clean_prod(producer),
         'url': page.url
     }
     await add_to_excel(data)
@@ -102,7 +135,7 @@ async def test():
     async with async_playwright() as pw:
         bw = await pw.chromium.launch(headless=False)
         page = await bw.new_page()
-        await novus_parsing_one(page, 'https://novus.zakaz.ua/uk/products/tsukerka-bob-sneil-60g--04820162520187/')
+        await novus_parsing_one(page, 'https://novus.zakaz.ua/uk/products/ukrayina--04820219343912/')
 
 if __name__ == '__main__':
     asyncio.run(test())

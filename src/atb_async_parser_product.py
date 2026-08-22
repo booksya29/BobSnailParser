@@ -4,6 +4,43 @@ from excel_add import add_to_excel
 from patchright.async_api import Page, TimeoutError
 from json_manager import read_json
 
+def clean_p(v):
+    if not v or v == '-' or v == 0 or v == '0':
+        return '-'
+    m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+    return m.group(0).replace(',', '.') if m else str(v).strip()
+
+def clean_prod(v):
+    if not v or v == '-' or v == 'NULL':
+        return '-'
+    cleaned = re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', str(v), flags=re.I).strip()
+    return cleaned if len(cleaned) <= 40 else '-'
+
+async def check_in_stock(page: Page) -> bool:
+    try:
+        res = await page.evaluate('''() => {
+            const body = (document.body.innerText || '').toLowerCase();
+            const markers = [
+                'немає в наявності',
+                'немає на складі',
+                'товар закінчився',
+                'закінчився',
+                'повідомити про наявність',
+                'повідомити, коли з’явиться',
+                'повідомити коли з’явиться',
+                'тимчасово відсутній'
+            ];
+            for (const m of markers) {
+                if (body.includes(m)) return false;
+            }
+            const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
+            if (outEl) return false;
+            return true;
+        }''')
+        return bool(res)
+    except Exception:
+        return True
+
 async def atb_parsing(page: Page, url: str):
     try:
         await page.goto(url, wait_until='domcontentloaded', timeout=25000)
@@ -12,6 +49,11 @@ async def atb_parsing(page: Page, url: str):
         return
     except Exception as e:
         print(f"Error navigating to {url}: {e}")
+        return
+
+    in_stock = await check_in_stock(page)
+    if not in_stock:
+        print(f"[АТБ] Товар відсутній в наявності: {url} - пропуск.")
         return
 
     product_name = '-'
@@ -36,19 +78,17 @@ async def atb_parsing(page: Page, url: str):
     price = '-'
     sale_price = '-'
     try:
-        raw_bottom = await page.locator('data[class*="product-price__bottom"], div[class*="product-about__buy-row"] data').first.text_content(timeout=2000)
-        sale_price = raw_bottom.strip() if raw_bottom else '-'
-    except Exception:
-        sale_price = '-'
-
-    try:
-        raw_top = await page.locator('data[class*="product-price__top"] span, data[class*="product-price__top"]').first.text_content(timeout=2000)
-        price = raw_top.strip() if raw_top else '-'
+        is_sale = await page.locator('div[class*="product-price--sale"]').count() > 0
+        top_p = await page.locator('data[class*="product-price__top"]').first.text_content(timeout=1000) if await page.locator('data[class*="product-price__top"]').count() > 0 else '-'
+        bot_p = await page.locator('data[class*="product-price__bottom"]').first.text_content(timeout=1000) if await page.locator('data[class*="product-price__bottom"]').count() > 0 else '-'
+        if is_sale:
+            price = bot_p
+            sale_price = top_p
+        else:
+            price = bot_p if bot_p != '-' else top_p
+            sale_price = '-'
     except Exception:
         price = '-'
-
-    if price == '-' or not price:
-        price = sale_price
         sale_price = '-'
 
     producer = '-'
@@ -58,21 +98,16 @@ async def atb_parsing(page: Page, url: str):
     except Exception:
         producer = '-'
 
-    def clean_p(v):
-        if not v or v == '-':
-            return '-'
-        m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
-        return m.group(0).replace(',', '.') if m else str(v).strip()
-
     data_row = {
         'shop': 'АТБ',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
-        'producer': re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', producer, flags=re.I).strip() or '-',
+        'producer': clean_prod(producer),
         'url': page.url
     }
     await add_to_excel(data_row)
+    print(data_row)
 
 async def atb_all_parsing(page: Page, on_progress=None):
     url_list = await read_json('atb.json')

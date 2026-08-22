@@ -4,6 +4,44 @@ from patchright.async_api import async_playwright, Page, TimeoutError
 from excel_add import add_to_excel
 from json_manager import read_json
 
+def clean_p(v):
+    if not v or v == '-' or v == 0 or v == '0':
+        return '-'
+    m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+    return m.group(0).replace(',', '.') if m else str(v).strip()
+
+def clean_prod(v):
+    if not v or v == '-' or v == 'NULL':
+        return '-'
+    cleaned = re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', str(v), flags=re.I).strip()
+    return cleaned if len(cleaned) <= 40 else '-'
+
+async def check_in_stock(page: Page) -> bool:
+    try:
+        res = await page.evaluate('''() => {
+            const body = (document.body.innerText || '').toLowerCase();
+            const markers = [
+                'немає в наявності',
+                'немає на складі',
+                'товар закінчився',
+                'цей товар закінчився',
+                'закінчився',
+                'повідомити про наявність',
+                'повідомити, коли з’явиться',
+                'повідомити коли з’явиться',
+                'тимчасово відсутній'
+            ];
+            for (const m of markers) {
+                if (body.includes(m)) return false;
+            }
+            const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
+            if (outEl) return false;
+            return true;
+        }''')
+        return bool(res)
+    except Exception:
+        return True
+
 async def tavria_parsing_one(page: Page, url: str):
     try:
         await page.goto(url, wait_until='domcontentloaded', timeout=25000)
@@ -25,6 +63,11 @@ async def tavria_parsing_one(page: Page, url: str):
             pass
         await asyncio.sleep(0.2)
 
+    in_stock = await check_in_stock(page)
+    if not in_stock:
+        print(f"[Таврія] Товар відсутній в наявності: {url} - пропуск.")
+        return
+
     if product_name == '-':
         try:
             t = await page.title()
@@ -36,11 +79,20 @@ async def tavria_parsing_one(page: Page, url: str):
     price = '-'
     sale_price = '-'
     try:
-        price_block = page.locator('div[class*="cart__actions__price"], div[class*="price"]').first
-        p_raw = await price_block.text_content(timeout=2000)
-        price = p_raw.replace('Додати', '').replace('₴', '').strip() if p_raw else '-'
+        old_el = page.locator('p.prod-crossed-out__price__old:not([class*="before"]), p[class="prod-crossed-out__price__old"]')
+        base_el = page.locator('p.base__price')
+        has_old = await old_el.count() > 0
+        old_price = await old_el.first.text_content(timeout=1000) if has_old else '-'
+        base_price = await base_el.first.text_content(timeout=1000) if await base_el.count() > 0 else '-'
+        if has_old and old_price != '-':
+            price = old_price
+            sale_price = base_price
+        else:
+            price = base_price
+            sale_price = '-'
     except Exception:
         price = '-'
+        sale_price = '-'
 
     producer = '-'
     try:
@@ -54,25 +106,16 @@ async def tavria_parsing_one(page: Page, url: str):
     except Exception:
         producer = '-'
 
-    def clean_p(v):
-        if not v or v == '-':
-            return '-'
-        m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
-        return m.group(0).replace(',', '.') if m else str(v).strip()
-
-    clean_prod = re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', producer, flags=re.I).strip()
-    if len(clean_prod) > 40:
-        clean_prod = '-'
-
     data = {
         'shop': 'Таврія',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
-        'producer': clean_prod or '-',
+        'producer': clean_prod(producer),
         'url': page.url
     }
     await add_to_excel(data)
+    print(data)
 
 async def tavria_parsing_all(page: Page, on_progress=None):
     data = await read_json('tavria.json')

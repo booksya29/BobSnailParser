@@ -4,6 +4,43 @@ from patchright.async_api import Page, TimeoutError, async_playwright
 from json_manager import read_json
 from excel_add import add_to_excel
 
+def clean_p(v):
+    if not v or v == '-' or v == 0 or v == '0':
+        return '-'
+    m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+    return m.group(0).replace(',', '.') if m else str(v).strip()
+
+def clean_prod(v):
+    if not v or v == '-' or v == 'NULL':
+        return '-'
+    cleaned = re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', str(v), flags=re.I).strip()
+    return cleaned if len(cleaned) <= 40 else '-'
+
+async def check_in_stock(page: Page) -> bool:
+    try:
+        res = await page.evaluate('''() => {
+            const body = (document.body.innerText || '').toLowerCase();
+            const markers = [
+                'немає в наявності',
+                'немає на складі',
+                'товар закінчився',
+                'цей товар закінчився',
+                'повідомити про наявність',
+                'повідомити, коли з’явиться',
+                'повідомити коли з’явиться',
+                'тимчасово відсутній'
+            ];
+            for (const m of markers) {
+                if (body.includes(m)) return false;
+            }
+            const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
+            if (outEl) return false;
+            return true;
+        }''')
+        return bool(res)
+    except Exception:
+        return True
+
 async def varus_parsing_one(page: Page, url: str):
     try:
         await page.goto(url, wait_until='domcontentloaded', timeout=25000)
@@ -12,6 +49,11 @@ async def varus_parsing_one(page: Page, url: str):
         return
     except Exception as e:
         print(f"Error navigating to {url}: {e}")
+        return
+
+    in_stock = await check_in_stock(page)
+    if not in_stock:
+        print(f"[Варус] Товар відсутній в наявності: {url} - пропуск.")
         return
 
     product_name = '-'
@@ -33,27 +75,23 @@ async def varus_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
-    old_price = '-'
-    special_price = '-'
+    price = '-'
+    sale_price = '-'
     try:
-        price_block = page.locator('div[class*="product-page__price"], div[class="price"]').first
-        old_el = await price_block.locator('del[class*="price__old"], del').first.text_content(timeout=2000)
-        old_price = old_el.strip() if old_el else '-'
+        del_el = page.locator('div.m-product-mini-details del, div.product-page__price del, del.sf-price__old, del')
+        ins_el = page.locator('div.m-product-mini-details ins, div.product-page__price ins, ins.sf-price__special, ins')
+        reg_el = page.locator('span.sf-price__regular, div.product-page__price, div.sf-price')
+        has_old_v = await del_el.count() > 0
+        old_v = await del_el.first.text_content(timeout=1000) if has_old_v else '-'
+        act_v = await ins_el.first.text_content(timeout=1000) if await ins_el.count() > 0 else (await reg_el.first.text_content(timeout=1000) if await reg_el.count() > 0 else '-')
+        if has_old_v and old_v != '-':
+            price = old_v
+            sale_price = act_v
+        else:
+            price = act_v
+            sale_price = '-'
     except Exception:
-        old_price = '-'
-
-    try:
-        price_block = page.locator('div[class*="product-page__price"], div[class="price"]').first
-        act_el = await price_block.locator('ins[class*="sf-price__special"], ins, div[class*="sf-price"]').first.text_content(timeout=2000)
-        special_price = act_el.strip() if act_el else '-'
-    except Exception:
-        special_price = '-'
-
-    if old_price and old_price != '-':
-        price = old_price
-        sale_price = special_price
-    else:
-        price = special_price
+        price = '-'
         sale_price = '-'
 
     producer = '-'
@@ -63,21 +101,16 @@ async def varus_parsing_one(page: Page, url: str):
     except Exception:
         producer = '-'
 
-    def clean_p(v):
-        if not v or v == '-':
-            return '-'
-        m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
-        return m.group(0).replace(',', '.') if m else str(v).strip()
-
     data = {
         'shop': 'Варус',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
-        'producer': re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', producer, flags=re.I).strip() or '-',
+        'producer': clean_prod(producer),
         'url': page.url
     }
     await add_to_excel(data)
+    print(data)
 
 async def varus_parsing_all(page: Page, on_progress=None):
     data = await read_json('varus.json')
@@ -99,7 +132,7 @@ async def test():
     async with async_playwright() as pw:
         bw = await pw.chromium.launch(headless=False)
         page = await bw.new_page()
-        await varus_parsing_one(page, 'https://varus.ua/snek-bob-snail-yabluko-ta-grusha-17-g')
+        await varus_parsing_one(page, 'https://varus.ua/pyure-yabluko-grusha-ravlik-bob-pauch-90g')
         await bw.close()
 
 if __name__ == "__main__":

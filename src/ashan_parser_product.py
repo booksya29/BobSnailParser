@@ -4,6 +4,44 @@ from excel_add import add_to_excel
 from json_manager import read_json
 from patchright.async_api import Page, TimeoutError, async_playwright
 
+def clean_p(v):
+    if not v or v == '-' or v == 0 or v == '0':
+        return '-'
+    m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+    return m.group(0).replace(',', '.') if m else str(v).strip()
+
+def clean_prod(v):
+    if not v or v == '-' or v == 'NULL':
+        return '-'
+    cleaned = re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', str(v), flags=re.I).strip()
+    return cleaned if len(cleaned) <= 40 else '-'
+
+async def check_in_stock(page: Page) -> bool:
+    try:
+        res = await page.evaluate('''() => {
+            const body = (document.body.innerText || '').toLowerCase();
+            const markers = [
+                'немає в наявності',
+                'немає на складі',
+                'товар закінчився',
+                'цей товар закінчився',
+                'закінчився',
+                'повідомити про наявність',
+                'повідомити, коли з’явиться',
+                'повідомити коли з’явиться',
+                'тимчасово відсутній'
+            ];
+            for (const m of markers) {
+                if (body.includes(m)) return false;
+            }
+            const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
+            if (outEl) return false;
+            return true;
+        }''')
+        return bool(res)
+    except Exception:
+        return True
+
 async def ashan_parsing_one(page: Page, url: str):
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=25000)
@@ -12,6 +50,11 @@ async def ashan_parsing_one(page: Page, url: str):
         return
     except Exception as e:
         print(f"Error navigating to {url}: {e}")
+        return
+
+    in_stock = await check_in_stock(page)
+    if not in_stock:
+        print(f"[Ашан] Товар відсутній в наявності: {url} - пропуск.")
         return
 
     product_name = '-'
@@ -33,28 +76,23 @@ async def ashan_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
-    old_price = 0
+    price = '-'
+    sale_price = '-'
     try:
-        old_price_el = page.locator('div[class*="ProductPagePrice_price_old"], div[class*="price_old"], del').first
-        raw_old = await old_price_el.text_content(timeout=2000)
-        old_price = raw_old.strip() if raw_old else 0
+        old_el = page.locator('div[class*="ProductPagePrice_price_old"]')
+        act_el = page.locator('div[class*="ProductPagePrice_price_actual"]')
+        has_old = await old_el.count() > 0
+        old_price = await old_el.first.text_content(timeout=1000) if has_old else '-'
+        act_price = await act_el.first.text_content(timeout=1000) if await act_el.count() > 0 else '-'
+        if has_old and old_price != '-':
+            price = old_price
+            sale_price = act_price
+        else:
+            price = act_price
+            sale_price = '-'
     except Exception:
-        old_price = 0
-
-    actual_price = '-'
-    try:
-        actual_price_el = page.locator('div[class*="ProductPagePrice_price_actual"], div[class*="price_actual"], div[class*="ProductPagePrice"]').first
-        raw_act = await actual_price_el.text_content(timeout=2000)
-        actual_price = raw_act.strip() if raw_act else '-'
-    except Exception:
-        actual_price = '-'
-
-    if not old_price or old_price == 0 or old_price == '-':
-        price = actual_price
+        price = '-'
         sale_price = '-'
-    else:
-        price = old_price
-        sale_price = actual_price
 
     producer = '-'
     try:
@@ -67,22 +105,12 @@ async def ashan_parsing_one(page: Page, url: str):
     except Exception:
         producer = '-'
 
-    def clean_p(v):
-        if not v or v == '-':
-            return '-'
-        m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
-        return m.group(0).replace(',', '.') if m else str(v).strip()
-
-    clean_prod = re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', producer, flags=re.I).strip()
-    if len(clean_prod) > 40:
-        clean_prod = '-'
-
     data = {
         'shop': 'Ашан',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
-        'producer': clean_prod or '-',
+        'producer': clean_prod(producer),
         'url': page.url,
     }
     await add_to_excel(data)
@@ -108,7 +136,7 @@ async def test():
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=False)
         page = await browser.new_page()
-        await ashan_parsing_one(page, 'https://auchan.ua/ua/natural-nye-jablochno-klubnichnye-konfety-bob-snail-ravlik-bob-60-g-672727-899562/?srsltid=AfmBOorucJW-LwK8yWiGepkyLnqSYXZjlQATW3jvqHWY9TgNtv6dWw5X')
+        await ashan_parsing_one(page, 'https://auchan.ua/ua/nabir-bob-snail-fun-cukerki-mango-20-g-ta-igrashka-brelok-4820219349280-1831621/')
         await browser.close()
 
 if __name__ == "__main__":

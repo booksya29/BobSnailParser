@@ -4,6 +4,44 @@ from patchright.async_api import async_playwright, Page, TimeoutError
 from json_manager import read_json
 from excel_add import add_to_excel
 
+def clean_p(v):
+    if not v or v == '-' or v == 0 or v == '0':
+        return '-'
+    m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+    return m.group(0).replace(',', '.') if m else str(v).strip()
+
+def clean_prod(v):
+    if not v or v == '-' or v == 'NULL':
+        return '-'
+    cleaned = re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', str(v), flags=re.I).strip()
+    return cleaned if len(cleaned) <= 40 else '-'
+
+async def check_in_stock(page: Page) -> bool:
+    try:
+        res = await page.evaluate('''() => {
+            const body = (document.body.innerText || '').toLowerCase();
+            const markers = [
+                'немає в наявності',
+                'немає на складі',
+                'товар закінчився',
+                'цей товар закінчився',
+                'закінчився',
+                'повідомити про наявність',
+                'повідомити, коли з’явиться',
+                'повідомити коли з’явиться',
+                'тимчасово відсутній'
+            ];
+            for (const m of markers) {
+                if (body.includes(m)) return false;
+            }
+            const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
+            if (outEl) return false;
+            return true;
+        }''')
+        return bool(res)
+    except Exception:
+        return True
+
 async def fora_parsing_one(page: Page, url: str):
     try:
         await page.goto(url, wait_until='domcontentloaded', timeout=25000)
@@ -25,6 +63,11 @@ async def fora_parsing_one(page: Page, url: str):
             pass
         await asyncio.sleep(0.2)
 
+    in_stock = await check_in_stock(page)
+    if not in_stock:
+        print(f"[Фора] Товар відсутній в наявності: {url} - пропуск.")
+        return
+
     if product_name == '-':
         try:
             t = await page.title()
@@ -36,10 +79,12 @@ async def fora_parsing_one(page: Page, url: str):
     price = '-'
     sale_price = '-'
     try:
-        price_container = page.locator('div[class*="product-price-container"], div[class*="price"]').first
+        price_container = page.locator('div[class*="product-price-container"], div[class*="current-price"]').first
         old_val = ''
         try:
-            old_val = await price_container.locator('div[class*="old-integer"]').first.text_content(timeout=1000)
+            old_el = price_container.locator('div[class*="old-integer"], div[class*="old-price"]')
+            if await old_el.count() > 0:
+                old_val = await old_el.first.text_content(timeout=1000)
         except Exception:
             old_val = ''
 
@@ -53,8 +98,8 @@ async def fora_parsing_one(page: Page, url: str):
             curr_kop = ''
 
         curr_price = f"{curr_grn.strip()}.{curr_kop.strip()}" if curr_grn and curr_kop else (curr_grn.strip() if curr_grn else '-')
-        if old_val and old_val.strip():
-            price = old_val.strip()
+        if old_val and old_val.strip() and old_val != '-':
+            price = old_val
             sale_price = curr_price
         else:
             price = curr_price
@@ -70,25 +115,16 @@ async def fora_parsing_one(page: Page, url: str):
     except Exception:
         producer = '-'
 
-    def clean_p(v):
-        if not v or v == '-':
-            return '-'
-        m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
-        return m.group(0).replace(',', '.') if m else str(v).strip()
-
-    clean_prod = re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', producer, flags=re.I).strip()
-    if len(clean_prod) > 40:
-        clean_prod = '-'
-
     data = {
         'shop': 'Фора',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
-        'producer': clean_prod or '-',
+        'producer': clean_prod(producer),
         'url': page.url
     }
     await add_to_excel(data)
+    print(data)
 
 async def fora_parsing_all(page: Page, on_progress=None):
     data = await read_json('fora.json')
