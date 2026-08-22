@@ -1,4 +1,5 @@
 import asyncio
+import re
 from patchright.async_api import Page, TimeoutError, async_playwright
 from json_manager import read_json
 from excel_add import add_to_excel
@@ -13,41 +14,67 @@ async def varus_parsing_one(page: Page, url: str):
         print(f"Error navigating to {url}: {e}")
         return
 
-    try:
-        await page.wait_for_selector('div[class="product__header"]', timeout=10000)
-        raw_name = await page.locator('div[class="product__header"]').text_content(timeout=5000)
-        product_name = raw_name.strip() if raw_name else '-'
-    except Exception:
-        product_name = '-'
-
-    price_block = page.locator('div[class="price"]')
-    try:
-        await page.wait_for_selector('div[class="price"]', timeout=6000)
-        price_raw = await price_block.locator('del[class*="price__old"]').text_content(timeout=3000)
-        sale_price_raw = await price_block.locator('ins[class*="sf-price__special"]').text_content(timeout=3000)
-        price = price_raw.replace('₴', '').strip() if price_raw else '-'
-        sale_price = sale_price_raw.replace('₴', '').strip() if sale_price_raw else '-'
-    except Exception:
-        sale_price = '-'
+    product_name = '-'
+    for _ in range(10):
         try:
-            raw_reg = await price_block.locator('div[class="sf-price"]').text_content(timeout=3000)
-            price = raw_reg.replace('₴', '').strip() if raw_reg else '-'
+            h1 = await page.locator('h1, div[class*="product__header"]').first.text_content(timeout=1000)
+            if h1 and h1.strip():
+                product_name = h1.strip()
+                break
         except Exception:
-            price = '-'
+            pass
+        await asyncio.sleep(0.2)
+
+    if product_name == '-':
+        try:
+            t = await page.title()
+            if t:
+                product_name = re.split(r' - | \| | купити', t)[0].strip()
+        except Exception:
+            product_name = '-'
+
+    old_price = '-'
+    special_price = '-'
+    try:
+        price_block = page.locator('div[class*="product-page__price"], div[class="price"]').first
+        old_el = await price_block.locator('del[class*="price__old"], del').first.text_content(timeout=2000)
+        old_price = old_el.strip() if old_el else '-'
+    except Exception:
+        old_price = '-'
 
     try:
-        await page.wait_for_selector('div[class="m-product-characteristics__row"]', timeout=5000)
-        raw_producer = await page.locator('div[class="m-product-characteristics__row"]', has_text='Бренд').locator('div').nth(1).text_content(timeout=3000)
+        price_block = page.locator('div[class*="product-page__price"], div[class="price"]').first
+        act_el = await price_block.locator('ins[class*="sf-price__special"], ins, div[class*="sf-price"]').first.text_content(timeout=2000)
+        special_price = act_el.strip() if act_el else '-'
+    except Exception:
+        special_price = '-'
+
+    if old_price and old_price != '-':
+        price = old_price
+        sale_price = special_price
+    else:
+        price = special_price
+        sale_price = '-'
+
+    producer = '-'
+    try:
+        raw_producer = await page.locator('div[class*="characteristics"], div', has_text=re.compile(r'Бренд|Торгова марка|Виробник', re.I)).first.locator('div').nth(1).text_content(timeout=2000)
         producer = raw_producer.strip() if raw_producer else '-'
     except Exception:
         producer = '-'
 
+    def clean_p(v):
+        if not v or v == '-':
+            return '-'
+        m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+        return m.group(0).replace(',', '.') if m else str(v).strip()
+
     data = {
         'shop': 'Варус',
         'name': product_name,
-        'price': price,
-        'sale_price': sale_price,
-        'producer': producer,
+        'price': clean_p(price),
+        'sale_price': clean_p(sale_price),
+        'producer': re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', producer, flags=re.I).strip() or '-',
         'url': page.url
     }
     await add_to_excel(data)
@@ -72,7 +99,7 @@ async def test():
     async with async_playwright() as pw:
         bw = await pw.chromium.launch(headless=False)
         page = await bw.new_page()
-        await varus_parsing_one(page, 'https://varus.ua/cukerki-naturalni-yabluchni-bob-snail-60g')
+        await varus_parsing_one(page, 'https://varus.ua/snek-bob-snail-yabluko-ta-grusha-17-g')
         await bw.close()
 
 if __name__ == "__main__":

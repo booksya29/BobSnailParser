@@ -1,4 +1,5 @@
 import asyncio
+import re
 from patchright.async_api import async_playwright, Page, TimeoutError
 from excel_add import add_to_excel
 from json_manager import read_json
@@ -13,35 +14,62 @@ async def tavria_parsing_one(page: Page, url: str):
         print(f"Error navigating to {url}: {e}")
         return
 
-    try:
-        await page.wait_for_selector('h1[data-testid="detail-name"]', timeout=10000)
-        raw_name = await page.locator('h1[data-testid="detail-name"]').text_content(timeout=5000)
-        product_name = raw_name.strip() if raw_name else '-'
-    except Exception:
-        product_name = '-'
-
-    price_block = page.locator('div[class*="cart__actions__price"]').first
-    try:
-        await page.wait_for_selector('div[class*="cart__actions__price"]', timeout=6000)
-        price_unform = await price_block.locator('p[data-testid*="crossed-out-old"]').text_content(timeout=3000)
-        sale_price = await price_block.locator('p[class*="base__price"]').text_content(timeout=3000)
-    except Exception:
+    product_name = '-'
+    for _ in range(10):
         try:
-            price_unform = await price_block.text_content(timeout=3000)
+            h1 = await page.locator('h1').first.text_content(timeout=1000)
+            if h1 and h1.strip():
+                product_name = h1.strip()
+                break
         except Exception:
-            price_unform = '-'
-        sale_price = '-'
+            pass
+        await asyncio.sleep(0.2)
 
-    price = price_unform.replace('Додати', '').strip() if price_unform else '-'
-    sale_price = sale_price.replace('Додати', '').strip() if sale_price else '-'
+    if product_name == '-':
+        try:
+            t = await page.title()
+            if t:
+                product_name = re.split(r' - | \| | купити', t)[0].strip()
+        except Exception:
+            product_name = '-'
+
+    price = '-'
+    sale_price = '-'
+    try:
+        price_block = page.locator('div[class*="cart__actions__price"], div[class*="price"]').first
+        p_raw = await price_block.text_content(timeout=2000)
+        price = p_raw.replace('Додати', '').replace('₴', '').strip() if p_raw else '-'
+    except Exception:
+        price = '-'
+
     producer = '-'
+    try:
+        producer_el = page.locator('table tr, div[class*="feature"]', has_text=re.compile(r'Бренд|Торгова марка|Виробник', re.I)).first
+        raw_producer = await producer_el.text_content(timeout=2000)
+        if raw_producer and (":" in raw_producer or "\n" in raw_producer):
+            parts = re.split(r'[:\n]+', raw_producer)
+            producer = parts[-1].strip() if len(parts) > 1 else raw_producer.strip()
+        else:
+            producer = raw_producer.strip() if raw_producer else '-'
+    except Exception:
+        producer = '-'
+
+    def clean_p(v):
+        if not v or v == '-':
+            return '-'
+        m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+        return m.group(0).replace(',', '.') if m else str(v).strip()
+
+    clean_prod = re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', producer, flags=re.I).strip()
+    if len(clean_prod) > 40:
+        clean_prod = '-'
 
     data = {
         'shop': 'Таврія',
         'name': product_name,
-        'price': price,
-        'sale_price': sale_price,
-        'producer': producer,
+        'price': clean_p(price),
+        'sale_price': clean_p(sale_price),
+        'producer': clean_prod or '-',
         'url': page.url
     }
     await add_to_excel(data)

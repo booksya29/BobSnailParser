@@ -1,4 +1,5 @@
 import asyncio
+import re
 from patchright.async_api import async_playwright, Page, TimeoutError
 from json_manager import add_json, read_json
 from excel_add import add_to_excel
@@ -13,47 +14,69 @@ async def silpo_parsing_one(page: Page, url: str):
         print(f"Error navigating to {url}: {e}")
         return
 
-    try:
-        await page.wait_for_selector('h1[data-autotestid="product-page__title"]', timeout=10000)
-        raw_name = await page.locator('h1[data-autotestid="product-page__title"]').text_content(timeout=5000)
-        product_name = raw_name.strip() if raw_name else '-'
-    except Exception:
-        product_name = '-'
+    product_name = '-'
+    for _ in range(10):
+        try:
+            h1 = await page.locator('h1').first.text_content(timeout=1000)
+            if h1 and h1.strip():
+                product_name = h1.strip()
+                break
+        except Exception:
+            pass
+        await asyncio.sleep(0.2)
 
+    if product_name == '-':
+        try:
+            t = await page.title()
+            if t:
+                product_name = re.split(r' - | \| | купити', t)[0].strip()
+        except Exception:
+            product_name = '-'
+
+    old_price = '-'
     try:
-        await page.wait_for_selector('del[class*="sale-price__old"]', timeout=3000)
-        old_price_raw = await page.locator('del[class="sale-price__old"]').text_content(timeout=3000)
+        old_price_raw = await page.locator('del[class*="sale-price__old"], del').first.text_content(timeout=2000)
         old_price = old_price_raw.strip() if old_price_raw else '-'
     except Exception:
         old_price = '-'
 
+    new_price = '-'
     try:
-        await page.wait_for_selector('span[class*="main-price"]', timeout=5000)
-        new_price_raw = await page.locator('span[class="main-price"]').text_content(timeout=3000)
+        new_price_raw = await page.locator('span[class*="main-price"], div[class*="product-price"]').first.text_content(timeout=2000)
         new_price = new_price_raw.strip() if new_price_raw else '-'
     except Exception:
         new_price = '-'
 
-    if old_price == '-':
+    if old_price == '-' or not old_price:
         price = new_price
-        sale_price = old_price
+        sale_price = '-'
     else:
         price = old_price
         sale_price = new_price
 
+    producer = '-'
     try:
-        await page.wait_for_selector('div[class*="attributes-list_block"]', timeout=5000)
-        raw_producer = await page.locator('div[class="attributes-list_block"]', has_text='Торгова марка').locator('a').text_content(timeout=3000)
+        raw_producer = await page.locator('div[class*="product-page__brand"] a, a[href*="/brand/"]').first.text_content(timeout=2000)
         producer = raw_producer.strip() if raw_producer else '-'
     except Exception:
         producer = '-'
 
+    def clean_p(v):
+        if not v or v == '-':
+            return '-'
+        m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+        return m.group(0).replace(',', '.') if m else str(v).strip()
+
+    clean_prod = re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', producer, flags=re.I).strip()
+    if len(clean_prod) > 40:
+        clean_prod = '-'
+
     data = {
         'shop': 'Сільпо',
         'name': product_name,
-        'price': price,
-        'sale_price': sale_price,
-        'producer': producer,
+        'price': clean_p(price),
+        'sale_price': clean_p(sale_price),
+        'producer': clean_prod or '-',
         'url': page.url
     }
     await add_to_excel(data)

@@ -1,4 +1,5 @@
 import asyncio
+import re
 from excel_add import add_to_excel
 from json_manager import read_json
 from patchright.async_api import Page, TimeoutError, async_playwright
@@ -13,52 +14,75 @@ async def ashan_parsing_one(page: Page, url: str):
         print(f"Error navigating to {url}: {e}")
         return
 
-    try:
-        await page.wait_for_selector('h1[class*=product_title]', timeout=10000)
-        raw_name = await page.locator('h1[class*=product_title]').first.text_content(timeout=5000)
-        product_name = raw_name.strip() if raw_name else '-'
-    except Exception:
-        product_name = '-'
+    product_name = '-'
+    for _ in range(10):
+        try:
+            h1 = await page.locator('h1').first.text_content(timeout=1000)
+            if h1 and h1.strip():
+                product_name = h1.strip()
+                break
+        except Exception:
+            pass
+        await asyncio.sleep(0.2)
 
+    if product_name == '-':
+        try:
+            t = await page.title()
+            if t:
+                product_name = re.split(r' - | \| | купити', t)[0].strip()
+        except Exception:
+            product_name = '-'
+
+    old_price = 0
     try:
-        await page.wait_for_selector('div[class*="ProductPagePrice_price_old"]', timeout=3000)
-        old_price = await page.locator('div[class*="ProductPagePrice_price_old"]').text_content(timeout=3000)
+        old_price_el = page.locator('div[class*="ProductPagePrice_price_old"], div[class*="price_old"], del').first
+        raw_old = await old_price_el.text_content(timeout=2000)
+        old_price = raw_old.strip() if raw_old else 0
     except Exception:
         old_price = 0
 
+    actual_price = '-'
     try:
-        await page.wait_for_selector('div[class*="ProductPagePrice_price_actual"]', timeout=5000)
-        actual_price = await page.locator('div[class*="ProductPagePrice_price_actual"]').text_content(timeout=3000)
+        actual_price_el = page.locator('div[class*="ProductPagePrice_price_actual"], div[class*="price_actual"], div[class*="ProductPagePrice"]').first
+        raw_act = await actual_price_el.text_content(timeout=2000)
+        actual_price = raw_act.strip() if raw_act else '-'
     except Exception:
         actual_price = '-'
 
-    if old_price == 0:
+    if not old_price or old_price == 0 or old_price == '-':
         price = actual_price
         sale_price = '-'
     else:
         price = old_price
         sale_price = actual_price
 
+    producer = '-'
     try:
-        await page.wait_for_selector('table[class*="productDetails_features__table"]', timeout=4000)
-        producer_non_form = await page.locator('table[class*="productDetails_features__table"]').locator('tr', has_text='Бренд').text_content(timeout=3000)
-        if producer_non_form and ":" in producer_non_form:
-            producer_split = producer_non_form.split(":")
-            producer = producer_split[1].strip()
+        producer_el = page.locator('table[class*="productDetails_features__table"] tr', has_text=re.compile(r'Бренд|Торгова марка|Виробник', re.I)).first
+        producer_text = await producer_el.text_content(timeout=2000)
+        if producer_text and ":" in producer_text:
+            producer = producer_text.split(":", 1)[1].strip()
         else:
-            producer = producer_non_form.strip() if producer_non_form else 'NULL'
+            producer = producer_text.strip() if producer_text else '-'
     except Exception:
-        producer = 'NULL'
+        producer = '-'
 
-    formatted_price = price.replace('\xa0', '').replace('грн', '').strip() if isinstance(price, str) else str(price)
-    formatted_sale_price = sale_price.replace('\xa0', '').replace('грн', '').strip() if isinstance(sale_price, str) else (str(sale_price) if sale_price else None)
+    def clean_p(v):
+        if not v or v == '-':
+            return '-'
+        m = re.search(r'\d+[\.,]\d{2}|\d+', str(v).replace('\xa0', ' '))
+        return m.group(0).replace(',', '.') if m else str(v).strip()
+
+    clean_prod = re.sub(r'^(Бренд|ТМ|Виробник|Торгова марка)\s*:?\s*', '', producer, flags=re.I).strip()
+    if len(clean_prod) > 40:
+        clean_prod = '-'
 
     data = {
         'shop': 'Ашан',
         'name': product_name,
-        'price': formatted_price,
-        'sale_price': formatted_sale_price,
-        'producer': producer,
+        'price': clean_p(price),
+        'sale_price': clean_p(sale_price),
+        'producer': clean_prod or '-',
         'url': page.url,
     }
     await add_to_excel(data)
@@ -85,7 +109,6 @@ async def test():
         browser = await pw.chromium.launch(headless=False)
         page = await browser.new_page()
         await ashan_parsing_one(page, 'https://auchan.ua/ua/natural-nye-jablochno-klubnichnye-konfety-bob-snail-ravlik-bob-60-g-672727-899562/?srsltid=AfmBOorucJW-LwK8yWiGepkyLnqSYXZjlQATW3jvqHWY9TgNtv6dWw5X')
-        await ashan_parsing_one(page, 'https://auchan.ua/ua/hlop-ja-detskie-organicheskie-hipp-s-bananom-i-jagodami-200-g-1000417/')
         await browser.close()
 
 if __name__ == "__main__":
