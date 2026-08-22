@@ -55,7 +55,7 @@ async def metro_parsing_one(page: Page, url: str):
     product_name = '-'
     for _ in range(10):
         try:
-            h1 = await page.locator('h1').first.text_content(timeout=1000)
+            h1 = await page.locator('h1, div.titleDisplay h2, div[class*="titleDisplay"] h2').first.text_content(timeout=1000)
             if h1 and h1.strip():
                 product_name = h1.strip()
                 break
@@ -72,7 +72,7 @@ async def metro_parsing_one(page: Page, url: str):
         try:
             t = await page.title()
             if t:
-                product_name = re.split(r' - | \| | купити', t)[0].strip()
+                product_name = re.split(r' - | \| | купити', t)[0].replace('METRO', '').strip()
         except Exception:
             product_name = '-'
 
@@ -81,10 +81,13 @@ async def metro_parsing_one(page: Page, url: str):
     producer = '-'
 
     if "zakaz.ua" in url:
+        container = page.locator('div[data-marker="Big Product Cart"], div[class*="BigProductCard"], main').first
         try:
-            has_old = await page.locator('span[data-marker="Old Price"], div[data-marker="Old Price"]').count() > 0
-            old_val = await page.locator('span[data-marker="Old Price"], div[data-marker="Old Price"]').first.text_content(timeout=1000) if has_old else '-'
-            act_val = await page.locator('span[data-marker="Discounted Price"], span[data-marker="Price"], div[data-marker="Discounted Price"], div[data-marker="Price"]').first.text_content(timeout=1000) if await page.locator('span[data-marker="Discounted Price"], span[data-marker="Price"], div[data-marker="Discounted Price"], div[data-marker="Price"]').count() > 0 else '-'
+            old_el = container.locator('span[data-marker="Old Price"], div[data-marker="Old Price"]')
+            act_el = container.locator('span[data-marker="Discounted Price"], span[data-marker="Price"]')
+            has_old = await old_el.count() > 0
+            old_val = await old_el.first.text_content(timeout=1000) if has_old else '-'
+            act_val = await act_el.first.text_content(timeout=1000) if await act_el.count() > 0 else '-'
 
             if has_old and old_val and old_val != '-':
                 price = old_val
@@ -97,7 +100,7 @@ async def metro_parsing_one(page: Page, url: str):
             sale_price = '-'
 
         try:
-            raw_producer = await page.locator('li[data-marker*="tm"], li', has_text=re.compile(r'Бренд|ТМ|Виробник', re.I)).first.text_content(timeout=2000)
+            raw_producer = await container.locator('li[data-marker*="tm"], li', has_text=re.compile(r'Бренд|ТМ|Виробник', re.I)).first.text_content(timeout=1000)
             if raw_producer and (":" in raw_producer or "\n" in raw_producer):
                 parts = re.split(r'[:\n]+', raw_producer)
                 producer = parts[-1].strip() if len(parts) > 1 else raw_producer.strip()
@@ -106,24 +109,44 @@ async def metro_parsing_one(page: Page, url: str):
         except Exception:
             producer = '-'
     else:
-        price_container = page.locator('div[class*="price-container"]')
         try:
-            sale_price_raw = await price_container.locator('span[class*="price-breakdown primary promotion"]').text_content(timeout=1000)
-            price_raw = await price_container.locator('span[class*="price-breakdown strike"]').text_content(timeout=1000)
-            sale_price = sale_price_raw if sale_price_raw else '-'
-            price = price_raw if price_raw else '-'
-        except Exception:
-            sale_price = '-'
-            try:
-                price_reg = await price_container.locator('span[class*="price-breakdown primary"]').text_content(timeout=1000)
-                price = price_reg if price_reg else '-'
-            except Exception:
-                price = '-'
+            res = await page.evaluate('''() => {
+                const rightCol = document.querySelector('div.ev-productview-details--right-col, div[class*="article-detail"], main') || document.body;
+                const strikeEl = rightCol.querySelector('span.strike, span[class*="strike"]');
+                const promoEl = rightCol.querySelector('span.promotion, span[class*="promotion"]');
+                const primaryEl = rightCol.querySelector('span.primary, span[class*="primary"], div.mfcss_article-detail--price-container');
+                
+                let brand = '-';
+                const brandHeader = Array.from(rightCol.querySelectorAll('*')).find(e => e.innerText && e.innerText.trim() === 'Бренд');
+                if (brandHeader && brandHeader.nextElementSibling) {
+                    brand = brandHeader.nextElementSibling.innerText.trim();
+                }
 
-        try:
-            raw_producer = await page.locator('div[class*="mfcss_article-detail--overview"]').first.locator('span').nth(1).text_content(timeout=2000)
-            producer = raw_producer.strip() if raw_producer else '-'
+                return {
+                    strike: strikeEl ? strikeEl.innerText : null,
+                    promo: promoEl ? promoEl.innerText : null,
+                    primary: primaryEl ? primaryEl.innerText : null,
+                    brand
+                };
+            }''')
+
+            strike = res.get('strike')
+            promo = res.get('promo')
+            primary = res.get('primary')
+            producer = res.get('brand', '-')
+
+            if strike and promo:
+                price = strike
+                sale_price = promo
+            elif promo:
+                price = promo
+                sale_price = '-'
+            else:
+                price = primary if primary else '-'
+                sale_price = '-'
         except Exception:
+            price = '-'
+            sale_price = '-'
             producer = '-'
 
     data = {
@@ -152,13 +175,3 @@ async def metro_parsing_all(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
-
-async def test():
-    async with async_playwright() as pw:
-        bw = await pw.chromium.launch(headless=False)
-        page = await bw.new_page()
-        await metro_parsing_one(page, 'https://metro.zakaz.ua/ru/products/piure-bob-sneil-90g--04820219343042/')
-        await bw.close()
-
-if __name__ == "__main__":
-    asyncio.run(test())

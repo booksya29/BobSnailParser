@@ -52,11 +52,6 @@ async def ashan_parsing_one(page: Page, url: str):
         print(f"Error navigating to {url}: {e}")
         return
 
-    in_stock = await check_in_stock(page)
-    if not in_stock:
-        print(f"[Ашан] Товар відсутній в наявності: {url} - пропуск.")
-        return
-
     product_name = '-'
     for _ in range(10):
         try:
@@ -68,6 +63,11 @@ async def ashan_parsing_one(page: Page, url: str):
             pass
         await asyncio.sleep(0.2)
 
+    in_stock = await check_in_stock(page)
+    if not in_stock:
+        print(f"[Ашан] Товар відсутній в наявності: {url} - пропуск.")
+        return
+
     if product_name == '-':
         try:
             t = await page.title()
@@ -76,28 +76,36 @@ async def ashan_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
-    price = '-'
-    sale_price = '-'
+    container = page.locator('div[class*="ProductPage_productPage"], main, body').first
+    price_wrap = container.locator('div[class*="ProductPagePrice_priceWrapper"], div[class*="ProductPage_price"], div[class*="product_product__price"]').first
+
+    old_price = '-'
+    actual_price = '-'
     try:
-        old_el = page.locator('div[class*="ProductPagePrice_price_old"]')
-        act_el = page.locator('div[class*="ProductPagePrice_price_actual"]')
+        old_el = price_wrap.locator('div[class*="ProductPagePrice_price_old"]')
         has_old = await old_el.count() > 0
         old_price = await old_el.first.text_content(timeout=1000) if has_old else '-'
-        act_price = await act_el.first.text_content(timeout=1000) if await act_el.count() > 0 else '-'
-        if has_old and old_price != '-':
-            price = old_price
-            sale_price = act_price
-        else:
-            price = act_price
-            sale_price = '-'
     except Exception:
-        price = '-'
+        old_price = '-'
+
+    try:
+        act_el = price_wrap.locator('div[class*="ProductPagePrice_price_actual"]')
+        has_act = await act_el.count() > 0
+        actual_price = await act_el.first.text_content(timeout=1000) if has_act else '-'
+    except Exception:
+        actual_price = '-'
+
+    if old_price and old_price != '-' and old_price != '0':
+        price = old_price
+        sale_price = actual_price
+    else:
+        price = actual_price
         sale_price = '-'
 
     producer = '-'
     try:
-        producer_el = page.locator('table[class*="productDetails_features__table"] tr', has_text=re.compile(r'Бренд|Торгова марка|Виробник', re.I)).first
-        producer_text = await producer_el.text_content(timeout=2000)
+        producer_el = container.locator('table[class*="productDetails_features__table"] tr', has_text=re.compile(r'Бренд|Торгова марка|Виробник', re.I)).first
+        producer_text = await producer_el.text_content(timeout=1000)
         if producer_text and ":" in producer_text:
             producer = producer_text.split(":", 1)[1].strip()
         else:
@@ -131,13 +139,3 @@ async def ashan_parsing_all(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
-
-async def test():
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=False)
-        page = await browser.new_page()
-        await ashan_parsing_one(page, 'https://auchan.ua/ua/nabir-bob-snail-fun-cukerki-mango-20-g-ta-igrashka-brelok-4820219349280-1831621/')
-        await browser.close()
-
-if __name__ == "__main__":
-    asyncio.run(test())

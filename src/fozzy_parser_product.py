@@ -24,6 +24,7 @@ async def check_in_stock(page: Page) -> bool:
                 'немає в наявності',
                 'немає на складі',
                 'товар закінчився',
+                'цей товар закінчився',
                 'закінчився',
                 'повідомити про наявність',
                 'повідомити, коли з’явиться',
@@ -51,11 +52,6 @@ async def fozzy_parsing_one(page: Page, url: str):
         print(f"Error navigating to {url}: {e}")
         return
 
-    in_stock = await check_in_stock(page)
-    if not in_stock:
-        print(f"[Фоззі] Товар відсутній в наявності: {url} - пропуск.")
-        return
-
     product_name = '-'
     for _ in range(10):
         try:
@@ -67,6 +63,11 @@ async def fozzy_parsing_one(page: Page, url: str):
             pass
         await asyncio.sleep(0.2)
 
+    in_stock = await check_in_stock(page)
+    if not in_stock:
+        print(f"[Фоззі] Товар відсутній в наявності: {url} - пропуск.")
+        return
+
     if product_name == '-':
         try:
             t = await page.title()
@@ -75,12 +76,17 @@ async def fozzy_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
+    container = page.locator('div.product_header_container, div[class*="product-container"], div.primary_block, main').first
+    price_wrap = container.locator('div.main_price_block, div.product-prices, div.current-price').first
+
     old_price = '-'
     regular_price = '-'
     try:
-        has_old = await page.locator('span[class*="old_price"]').count() > 0
-        old_price = await page.locator('span[class*="old_price"]').first.text_content(timeout=1000) if has_old else '-'
-        regular_price = await page.locator('span[class*="regular_price"], div.current-price span, span.price').first.text_content(timeout=1000) if await page.locator('span[class*="regular_price"], div.current-price span, span.price').count() > 0 else '-'
+        old_el = price_wrap.locator('span.old_price, span[class*="old_price"]')
+        reg_el = price_wrap.locator('span.regular_price, span.price, div.current-price span')
+        has_old = await old_el.count() > 0
+        old_price = await old_el.first.text_content(timeout=1000) if has_old else '-'
+        regular_price = await reg_el.first.text_content(timeout=1000) if await reg_el.count() > 0 else '-'
         if has_old and old_price != '-':
             price = old_price
             sale_price = regular_price
@@ -93,7 +99,7 @@ async def fozzy_parsing_one(page: Page, url: str):
 
     producer = '-'
     try:
-        raw_producer = await page.locator('div[class*="product_characteristics_item"]', has_text='Бренд').first.locator('a, span').first.text_content(timeout=2000)
+        raw_producer = await container.locator('div.product_characteristics_item', has_text='Бренд').first.locator('a, span').first.text_content(timeout=1000)
         producer = raw_producer.strip() if raw_producer else '-'
     except Exception:
         producer = '-'
@@ -124,13 +130,3 @@ async def fozzy_parsing_all(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
-
-async def test():
-    async with async_playwright() as p:
-        b = await p.chromium.launch(headless=False)
-        page = await b.new_page()
-        await fozzy_parsing_one(page, "https://fozzyshop.ua/varennya-pyure-syropy-bez-tsukru/890857-piure-bob-snail-persykove.html")
-        await b.close()
-
-if __name__ == "__main__":
-    asyncio.run(test())

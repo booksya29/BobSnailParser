@@ -24,6 +24,7 @@ async def check_in_stock(page: Page) -> bool:
                 'немає в наявності',
                 'немає на складі',
                 'товар закінчився',
+                'цей товар закінчився',
                 'закінчився',
                 'повідомити про наявність',
                 'повідомити, коли з’явиться',
@@ -51,11 +52,6 @@ async def atb_parsing(page: Page, url: str):
         print(f"Error navigating to {url}: {e}")
         return
 
-    in_stock = await check_in_stock(page)
-    if not in_stock:
-        print(f"[АТБ] Товар відсутній в наявності: {url} - пропуск.")
-        return
-
     product_name = '-'
     for _ in range(10):
         try:
@@ -67,6 +63,11 @@ async def atb_parsing(page: Page, url: str):
             pass
         await asyncio.sleep(0.2)
 
+    in_stock = await check_in_stock(page)
+    if not in_stock:
+        print(f"[АТБ] Товар відсутній в наявності: {url} - пропуск.")
+        return
+
     if product_name == '-':
         try:
             t = await page.title()
@@ -75,17 +76,31 @@ async def atb_parsing(page: Page, url: str):
         except Exception:
             product_name = '-'
 
+    container = page.locator('div.js-product-container, div.cardproduct-popup, div[class*="product-about"], main').first
+
     price = '-'
     sale_price = '-'
     try:
-        is_sale = await page.locator('div[class*="product-price--sale"]').count() > 0
-        top_p = await page.locator('data[class*="product-price__top"]').first.text_content(timeout=1000) if await page.locator('data[class*="product-price__top"]').count() > 0 else '-'
-        bot_p = await page.locator('data[class*="product-price__bottom"]').first.text_content(timeout=1000) if await page.locator('data[class*="product-price__bottom"]').count() > 0 else '-'
+        price_block = container.locator('div.product-price, div[class*="product-price"]').first
+        is_sale = await price_block.locator('div[class*="product-price--sale"], div.product-price--sale').count() > 0 or await container.locator('div[class*="product-price--sale"]').count() > 0
+        top_el = price_block.locator('data.product-price__top, [class*="product-price__top"], data, span.product-price__coin')
+        bot_el = price_block.locator('data.product-price__bottom, [class*="product-price__bottom"]')
+        top_p = await top_el.first.text_content(timeout=1000) if await top_el.count() > 0 else '-'
+        bot_p = await bot_el.first.text_content(timeout=1000) if await bot_el.count() > 0 else '-'
+        raw_p = await price_block.text_content(timeout=1000) if await price_block.count() > 0 else '-'
+        
         if is_sale:
-            price = bot_p
-            sale_price = top_p
-        else:
             price = bot_p if bot_p != '-' else top_p
+            sale_price = top_p if bot_p != '-' else '-'
+        else:
+            if top_p != '-':
+                price = top_p
+            elif bot_p != '-':
+                price = bot_p
+            elif raw_p != '-':
+                price = raw_p
+            else:
+                price = '-'
             sale_price = '-'
     except Exception:
         price = '-'
@@ -93,7 +108,7 @@ async def atb_parsing(page: Page, url: str):
 
     producer = '-'
     try:
-        raw_prod = await page.locator('div[class*="product-characteristics__item"]', has_text=re.compile(r'Торгова марка|Бренд|Виробник', re.I)).first.locator('div[class*="value"], span').first.text_content(timeout=2000)
+        raw_prod = await page.locator('div[class*="product-characteristics__item"]', has_text=re.compile(r'Торгова марка|Бренд|Виробник', re.I)).first.locator('div[class*="value"], span').first.text_content(timeout=1000)
         producer = raw_prod.strip() if raw_prod else '-'
     except Exception:
         producer = '-'

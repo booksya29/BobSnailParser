@@ -76,26 +76,18 @@ async def fora_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
+    container = page.locator('div.product-page, div[class*="product-details"], main').first
+    price_wrap = container.locator('div.product-price-container, div.current-price').first
+
     price = '-'
     sale_price = '-'
     try:
-        price_container = page.locator('div[class*="product-price-container"], div[class*="current-price"]').first
-        old_val = ''
-        try:
-            old_el = price_container.locator('div[class*="old-integer"], div[class*="old-price"]')
-            if await old_el.count() > 0:
-                old_val = await old_el.first.text_content(timeout=1000)
-        except Exception:
-            old_val = ''
-
-        curr_grn = ''
-        curr_kop = ''
-        try:
-            curr_grn = await price_container.locator('div[class*="current-integer"]').first.text_content(timeout=1000)
-            curr_kop = await price_container.locator('div[class*="current-fraction"]').first.text_content(timeout=1000)
-        except Exception:
-            curr_grn = ''
-            curr_kop = ''
+        old_el = price_wrap.locator('div.old-price, div.old-integer')
+        curr_grn_el = price_wrap.locator('div.current-integer')
+        curr_kop_el = price_wrap.locator('div.current-fraction')
+        old_val = await old_el.first.text_content(timeout=1000) if await old_el.count() > 0 else ''
+        curr_grn = await curr_grn_el.first.text_content(timeout=1000) if await curr_grn_el.count() > 0 else ''
+        curr_kop = await curr_kop_el.first.text_content(timeout=1000) if await curr_kop_el.count() > 0 else ''
 
         curr_price = f"{curr_grn.strip()}.{curr_kop.strip()}" if curr_grn and curr_kop else (curr_grn.strip() if curr_grn else '-')
         if old_val and old_val.strip() and old_val != '-':
@@ -110,7 +102,7 @@ async def fora_parsing_one(page: Page, url: str):
 
     producer = '-'
     try:
-        raw_producer = await page.locator('div[class*="trademark"], div[class*="product-details-column"]', has_text=re.compile(r'Торгова марка|Бренд', re.I)).first.locator('div[class*="value"], a, span').first.text_content(timeout=2000)
+        raw_producer = await container.locator('div[class*="trademark"], div[class*="product-details-column"]', has_text=re.compile(r'Торгова марка|Бренд', re.I)).first.locator('div[class*="value"], a, span').first.text_content(timeout=1000)
         producer = raw_producer.strip() if raw_producer else '-'
     except Exception:
         producer = '-'

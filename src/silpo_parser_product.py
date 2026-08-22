@@ -76,18 +76,22 @@ async def silpo_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
+    container = page.locator('div[class*="product-page__content"], div.product-page, main, body').first
+    price_wrap = container.locator('div.prices-row, div[class*="product-page__price"], div.product-price').first
+
     old_price = '-'
+    new_price = '-'
     try:
-        has_old = await page.locator('del[class*="sale-price__old"], del').count() > 0
-        old_price_raw = await page.locator('del[class*="sale-price__old"], del').first.text_content(timeout=1000) if has_old else '-'
-        old_price = old_price_raw.strip() if old_price_raw else '-'
+        old_el = price_wrap.locator('del.sale-price__old, del')
+        has_old = await old_el.count() > 0
+        old_price = await old_el.first.text_content(timeout=1000) if has_old else '-'
     except Exception:
         old_price = '-'
 
-    new_price = '-'
     try:
-        new_price_raw = await page.locator('span[class*="main-price"], div[class*="product-price"]').first.text_content(timeout=2000)
-        new_price = new_price_raw.strip() if new_price_raw else '-'
+        main_el = price_wrap.locator('span.main-price, div[class*="product-price"], span')
+        has_main = await main_el.count() > 0
+        new_price = await main_el.first.text_content(timeout=1000) if has_main else '-'
     except Exception:
         new_price = '-'
 
@@ -100,7 +104,7 @@ async def silpo_parsing_one(page: Page, url: str):
 
     producer = '-'
     try:
-        raw_producer = await page.locator('div[class*="product-page__brand"] a, a[href*="/brand/"]').first.text_content(timeout=2000)
+        raw_producer = await container.locator('div[class*="product-page__brand"] a, a[href*="/brand/"]').first.text_content(timeout=1000)
         producer = raw_producer.strip() if raw_producer else '-'
     except Exception:
         producer = '-'
@@ -131,12 +135,3 @@ async def silpo_parsing_all(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
-
-async def test():
-    async with async_playwright() as pw:
-        bw = await pw.chromium.launch(headless=False)
-        page = await bw.new_page()
-        await silpo_parsing_one(page,'https://silpo.ua/product/somga-shmatok-okholodzhenyi-878270')
-
-if __name__ == "__main__":
-    asyncio.run(test())

@@ -78,18 +78,23 @@ async def novus_parsing_one(page: Page, url: str):
 
     price = '-'
     sale_price = '-'
+    item_selector = page.locator('div[class*="BigProductCardTopInfo__priceInfo"]').first
     try:
-        has_old = await page.locator('span[data-marker="Old Price"], div[data-marker="Old Price"]').count() > 0
-        old_val = await page.locator('span[data-marker="Old Price"], div[data-marker="Old Price"]').first.text_content(timeout=1000) if has_old else '-'
-        act_val = await page.locator('span[data-marker="Discounted Price"], span[data-marker="Price"], div[data-marker="Discounted Price"], div[data-marker="Price"]').first.text_content(timeout=1000) if await page.locator('span[data-marker="Discounted Price"], span[data-marker="Price"], div[data-marker="Discounted Price"], div[data-marker="Price"]').count() > 0 else '-'
-        
+        has_old = await item_selector.locator('span[data-marker="Old Price"], div[data-marker="Old Price"]').count() > 0
+        old_val = await item_selector.locator('span[data-marker="Old Price"], div[data-marker="Old Price"]').first.text_content(timeout=1000) if has_old else '-'
+        try:
+            act_val = await item_selector.locator('span[data-marker="Discounted Price"], span[data-marker="Price"], div[data-marker="Discounted Price"], div[data-marker="Price"]').first.text_content(timeout=1000) if await page.locator('span[data-marker="Discounted Price"], span[data-marker="Price"], div[data-marker="Discounted Price"], div[data-marker="Price"]').count() > 0 else '-'
+        except TimeoutError:
+            act_val = '-'
+            pass
         if has_old and old_val and old_val != '-':
             price = old_val
             sale_price = act_val
         else:
             price = act_val
             sale_price = '-'
-    except Exception:
+    except Exception as e:
+        print(e)
         price = '-'
         sale_price = '-'
 
@@ -135,7 +140,11 @@ async def test():
     async with async_playwright() as pw:
         bw = await pw.chromium.launch(headless=False)
         page = await bw.new_page()
-        await novus_parsing_one(page, 'https://novus.zakaz.ua/uk/products/ukrayina--04820219343912/')
-
+        #немає в наявності
+        await novus_parsing_one(page, 'https://novus.zakaz.ua/uk/products/tsukerka-bob-sneil-60g--04820219341536/')
+        #акціний товар
+        await novus_parsing_one(page, 'https://novus.zakaz.ua/uk/products/voda-morshinska-1500ml--04820017000253/')
+        #без акції
+        await novus_parsing_one(page, 'https://novus.zakaz.ua/uk/products/ukrayina--04820219343950/')
 if __name__ == '__main__':
     asyncio.run(test())

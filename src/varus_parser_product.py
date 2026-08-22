@@ -25,6 +25,7 @@ async def check_in_stock(page: Page) -> bool:
                 'немає на складі',
                 'товар закінчився',
                 'цей товар закінчився',
+                'закінчився',
                 'повідомити про наявність',
                 'повідомити, коли з’явиться',
                 'повідомити коли з’явиться',
@@ -51,11 +52,6 @@ async def varus_parsing_one(page: Page, url: str):
         print(f"Error navigating to {url}: {e}")
         return
 
-    in_stock = await check_in_stock(page)
-    if not in_stock:
-        print(f"[Варус] Товар відсутній в наявності: {url} - пропуск.")
-        return
-
     product_name = '-'
     for _ in range(10):
         try:
@@ -67,6 +63,11 @@ async def varus_parsing_one(page: Page, url: str):
             pass
         await asyncio.sleep(0.2)
 
+    in_stock = await check_in_stock(page)
+    if not in_stock:
+        print(f"[Варус] Товар відсутній в наявності: {url} - пропуск.")
+        return
+
     if product_name == '-':
         try:
             t = await page.title()
@@ -75,16 +76,18 @@ async def varus_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
+    container = page.locator('div.m-product-short-info__price-section, div.m-product-mini-details__price, div.product-page__price, div.sf-price, main').first
+
     price = '-'
     sale_price = '-'
     try:
-        del_el = page.locator('div.m-product-mini-details del, div.product-page__price del, del.sf-price__old, del')
-        ins_el = page.locator('div.m-product-mini-details ins, div.product-page__price ins, ins.sf-price__special, ins')
-        reg_el = page.locator('span.sf-price__regular, div.product-page__price, div.sf-price')
+        del_el = container.locator('del')
+        ins_el = container.locator('ins')
+        reg_el = container.locator('span.sf-price__regular, div.sf-price, span, div')
         has_old_v = await del_el.count() > 0
         old_v = await del_el.first.text_content(timeout=1000) if has_old_v else '-'
         act_v = await ins_el.first.text_content(timeout=1000) if await ins_el.count() > 0 else (await reg_el.first.text_content(timeout=1000) if await reg_el.count() > 0 else '-')
-        if has_old_v and old_v != '-':
+        if has_old_v and old_v != '-' and 'закінчився' not in old_v.lower():
             price = old_v
             sale_price = act_v
         else:
@@ -96,7 +99,7 @@ async def varus_parsing_one(page: Page, url: str):
 
     producer = '-'
     try:
-        raw_producer = await page.locator('div[class*="characteristics"], div', has_text=re.compile(r'Бренд|Торгова марка|Виробник', re.I)).first.locator('div').nth(1).text_content(timeout=2000)
+        raw_producer = await page.locator('div[class*="characteristics"], div', has_text=re.compile(r'Бренд|Торгова марка|Виробник', re.I)).first.locator('div').nth(1).text_content(timeout=1000)
         producer = raw_producer.strip() if raw_producer else '-'
     except Exception:
         producer = '-'
@@ -127,13 +130,3 @@ async def varus_parsing_all(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
-
-async def test():
-    async with async_playwright() as pw:
-        bw = await pw.chromium.launch(headless=False)
-        page = await bw.new_page()
-        await varus_parsing_one(page, 'https://varus.ua/pyure-yabluko-grusha-ravlik-bob-pauch-90g')
-        await bw.close()
-
-if __name__ == "__main__":
-    asyncio.run(test())
