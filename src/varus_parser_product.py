@@ -5,7 +5,7 @@ from excel_add import add_to_excel
 
 async def varus_parsing_one(page: Page, url: str):
     try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=15000)
+        await page.goto(url, wait_until='domcontentloaded', timeout=25000)
     except TimeoutError:
         print(f"Can't load {url}")
         return
@@ -14,30 +14,32 @@ async def varus_parsing_one(page: Page, url: str):
         return
 
     try:
-        raw_name = await page.locator('div[class="product__header"]').text_content(timeout=3000)
+        await page.wait_for_selector('div[class="product__header"]', timeout=10000)
+        raw_name = await page.locator('div[class="product__header"]').text_content(timeout=5000)
         product_name = raw_name.strip() if raw_name else '-'
-    except TimeoutError:
+    except Exception:
         product_name = '-'
 
     price_block = page.locator('div[class="price"]')
     try:
-        await page.wait_for_selector('div[class="price"]', timeout=3000)
-        price_raw = await price_block.locator('del[class*="price__old"]').text_content(timeout=2000)
-        sale_price_raw = await price_block.locator('ins[class*="sf-price__special"]').text_content(timeout=2000)
+        await page.wait_for_selector('div[class="price"]', timeout=6000)
+        price_raw = await price_block.locator('del[class*="price__old"]').text_content(timeout=3000)
+        sale_price_raw = await price_block.locator('ins[class*="sf-price__special"]').text_content(timeout=3000)
         price = price_raw.replace('₴', '').strip() if price_raw else '-'
         sale_price = sale_price_raw.replace('₴', '').strip() if sale_price_raw else '-'
-    except TimeoutError:
+    except Exception:
         sale_price = '-'
         try:
-            raw_reg = await price_block.locator('div[class="sf-price"]').text_content(timeout=2000)
+            raw_reg = await price_block.locator('div[class="sf-price"]').text_content(timeout=3000)
             price = raw_reg.replace('₴', '').strip() if raw_reg else '-'
-        except TimeoutError:
+        except Exception:
             price = '-'
 
     try:
+        await page.wait_for_selector('div[class="m-product-characteristics__row"]', timeout=5000)
         raw_producer = await page.locator('div[class="m-product-characteristics__row"]', has_text='Бренд').locator('div').nth(1).text_content(timeout=3000)
         producer = raw_producer.strip() if raw_producer else '-'
-    except TimeoutError:
+    except Exception:
         producer = '-'
 
     data = {

@@ -5,7 +5,7 @@ from excel_add import add_to_excel
 
 async def metro_parsing_one(page: Page, url: str):
     try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=15000)
+        await page.goto(url, wait_until='domcontentloaded', timeout=25000)
     except TimeoutError:
         print(f"Can't load {url}")
         return
@@ -14,31 +14,32 @@ async def metro_parsing_one(page: Page, url: str):
         return
 
     try:
-        await page.wait_for_selector('div[class="titleDisplay"]', timeout=4000)
-        raw_name = await page.locator('div[class="titleDisplay"]').locator('h2').text_content(timeout=2000)
+        await page.wait_for_selector('div[class="titleDisplay"] h2', timeout=10000)
+        raw_name = await page.locator('div[class="titleDisplay"]').locator('h2').text_content(timeout=5000)
         product_name = raw_name.strip() if raw_name else '-'
-    except TimeoutError:
+    except Exception:
         product_name = '-'
 
     price_container = page.locator('div[class*="price-container"]')
     try:
-        await page.wait_for_selector('div[class*="price-container"]', timeout=3000)
-        sale_price_raw = await price_container.locator('span[class*="price-breakdown primary promotion"]').text_content(timeout=2000)
-        price_raw = await price_container.locator('span[class*="price-breakdown strike"]').text_content(timeout=2000)
+        await page.wait_for_selector('div[class*="price-container"]', timeout=6000)
+        sale_price_raw = await price_container.locator('span[class*="price-breakdown primary promotion"]').text_content(timeout=3000)
+        price_raw = await price_container.locator('span[class*="price-breakdown strike"]').text_content(timeout=3000)
         sale_price = sale_price_raw if sale_price_raw else '-'
         price = price_raw if price_raw else '-'
-    except TimeoutError:
+    except Exception:
         sale_price = '-'
         try:
-            price_reg = await price_container.locator('span[class*="price-breakdown primary"]').text_content(timeout=2000)
+            price_reg = await price_container.locator('span[class*="price-breakdown primary"]').text_content(timeout=3000)
             price = price_reg if price_reg else '-'
-        except TimeoutError:
+        except Exception:
             price = '-'
 
     try:
-        raw_producer = await page.locator('div[class="mfcss_article-detail--overview"]').locator('p', has_text='Бренд').locator('span').nth(1).text_content(timeout=2000)
+        await page.wait_for_selector('div[class="mfcss_article-detail--overview"]', timeout=5000)
+        raw_producer = await page.locator('div[class="mfcss_article-detail--overview"]').locator('p', has_text='Бренд').locator('span').nth(1).text_content(timeout=3000)
         producer = raw_producer.strip() if raw_producer else '-'
-    except TimeoutError:
+    except Exception:
         producer = '-'
 
     clean_price = price.replace('\xa0грн  з ПДВ', '').replace('\xa0грн з ПДВ', '').strip() if isinstance(price, str) else str(price)

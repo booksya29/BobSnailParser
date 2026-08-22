@@ -5,7 +5,7 @@ from excel_add import add_to_excel
 
 async def fora_parsing_one(page: Page, url: str):
     try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=15000)
+        await page.goto(url, wait_until='domcontentloaded', timeout=25000)
     except TimeoutError:
         print(f"Can't load {url}")
         return
@@ -14,30 +14,33 @@ async def fora_parsing_one(page: Page, url: str):
         return
 
     try:
-        raw_name = await page.locator('h1[class="title"]').text_content(timeout=3000)
+        await page.wait_for_selector('h1[class="title"]', timeout=10000)
+        raw_name = await page.locator('h1[class="title"]').text_content(timeout=5000)
         product_name = raw_name.strip() if raw_name else '-'
-    except TimeoutError:
+    except Exception:
         product_name = '-'
 
     price_container = page.locator('div[class*="product-price-container"]').first
     try:
+        await page.wait_for_selector('div[class*="product-price-container"]', timeout=6000)
         price = await price_container.locator('div[class="old-integer"]').text_content(timeout=3000)
         sale_price_grn = await price_container.locator('div[class="current-integer"]').text_content(timeout=2000)
         sale_price_kop = await price_container.locator('div[class="current-fraction"]').text_content(timeout=2000)
         sale_price = f"{sale_price_grn}.{sale_price_kop}" if sale_price_grn and sale_price_kop else '-'
-    except TimeoutError:
+    except Exception:
         sale_price = '-'
         try:
-            price_grn = await price_container.locator('div[class="current-integer"]').text_content(timeout=2000)
-            price_kop = await price_container.locator('div[class="current-fraction"]').text_content(timeout=2000)
+            price_grn = await price_container.locator('div[class="current-integer"]').text_content(timeout=3000)
+            price_kop = await price_container.locator('div[class="current-fraction"]').text_content(timeout=3000)
             price = f"{price_grn}.{price_kop}" if price_grn and price_kop else '-'
-        except TimeoutError:
+        except Exception:
             price = '-'
 
     try:
+        await page.wait_for_selector('div[class*="product-details-column"]', timeout=5000)
         raw_producer = await page.locator('div[class="product-details-column trademark"]', has_text='Торгова марка').locator('div[class="product-details-value"]').text_content(timeout=3000)
         producer = raw_producer.strip() if raw_producer else '-'
-    except TimeoutError:
+    except Exception:
         producer = '-'
 
     data = {

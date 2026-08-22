@@ -5,7 +5,7 @@ from json_manager import read_json
 
 async def fozzy_parsing_one(page: Page, url: str):
     try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=15000)
+        await page.goto(url, wait_until='domcontentloaded', timeout=25000)
     except TimeoutError:
         print(f"Can't load {url}")
         return
@@ -14,21 +14,23 @@ async def fozzy_parsing_one(page: Page, url: str):
         return
 
     try:
-        raw_name = await page.locator('div[class="product_name"]').text_content(timeout=3000)
+        await page.wait_for_selector('div[class="product_name"]', timeout=10000)
+        raw_name = await page.locator('div[class="product_name"]').text_content(timeout=5000)
         product_name = raw_name.strip() if raw_name else '-'
-    except TimeoutError:
+    except Exception:
         product_name = '-'
 
     try:
+        await page.wait_for_selector('div[class*="price_container"]', timeout=6000)
         raw_old = await page.locator('div[class*="price_container"]').locator('span[class="old_price"]').first.text_content(timeout=3000)
         old_price = raw_old.strip() if raw_old else '-'
-    except TimeoutError:
+    except Exception:
         old_price = '-'
 
     try:
         raw_regular = await page.locator('div[class*="price_container"]').locator('span[class="regular_price"]').first.text_content(timeout=3000)
         regular_price = raw_regular.strip() if raw_regular else '-'
-    except TimeoutError:
+    except Exception:
         regular_price = '-'
 
     if old_price == '-':
@@ -39,9 +41,10 @@ async def fozzy_parsing_one(page: Page, url: str):
         sale_price = regular_price
 
     try:
+        await page.wait_for_selector('div[class="product_characteristics_item"]', timeout=5000)
         raw_producer = await page.locator('div[class="product_characteristics_item"]', has_text='Бренд').locator('a').text_content(timeout=3000)
         producer = raw_producer.strip() if raw_producer else '-'
-    except TimeoutError:
+    except Exception:
         producer = '-'
 
     data = {

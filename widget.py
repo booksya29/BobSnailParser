@@ -52,6 +52,18 @@ class Worker(QObject):
         if not parsers:
             return
 
+        active_shops = []
+        for shop_key, parser_func, json_name in parsers:
+            urls = await json_manager.read_json(json_name)
+            if urls:
+                active_shops.append((shop_key, parser_func, urls))
+            else:
+                self.progress.emit(shop_key, 100)
+
+        if not active_shops:
+            self.failed.emit("Не знайдено жодного посилання. Будь ласка, додайте посилання у конфігурацію магазинів через 'Edit Config'.")
+            return
+
         from patchright.async_api import async_playwright
 
         async def run_shop(shop_key, parser_func, page):
@@ -65,36 +77,56 @@ class Worker(QObject):
                     await parser_func(page, on_progress=on_progress)
                 else:
                     await parser_func(page)
+            except Exception as e:
+                print(f"Error parsing {shop_key}: {e}")
             finally:
                 on_progress(100)
 
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(headless=False)
-            context = await browser.new_context(viewport={"height": 1, "width": 1})
+            browser = await playwright.chromium.launch(
+                headless=False,
+                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+            )
+            context = await browser.new_context(
+                viewport={"height": 1, "width": 1}
+            )
             try:
-                pages = await asyncio.gather(*(context.new_page() for _ in parsers))
-                results = await asyncio.gather(
-                    *(run_shop(key, parser, page) for (key, parser), page in zip(parsers, pages)),
-                    return_exceptions=True,
+                semaphore = asyncio.Semaphore(3)
+
+                async def process_shop(shop_key, parser_func):
+                    async with semaphore:
+                        page = await context.new_page()
+                        try:
+                            await run_shop(shop_key, parser_func, page)
+                        finally:
+                            try:
+                                await page.close()
+                            except Exception:
+                                pass
+
+                await asyncio.gather(
+                    *(process_shop(shop_key, parser_func) for shop_key, parser_func, _ in active_shops),
+                    return_exceptions=True
                 )
-                errors = [str(result) for result in results if isinstance(result, Exception)]
-                if errors:
-                    raise RuntimeError("\n".join(errors))
             finally:
-                await browser.close()
+                try:
+                    await context.close()
+                    await browser.close()
+                except Exception:
+                    pass
 
     @staticmethod
     def _load_parsers():
         return [
-            ("atb", atb_async_parser_product.atb_all_parsing),
-            ("ashan", ashan_parser_product.ashan_parsing_all),
-            ("novus", novus_parser_product.novus_parsing_all),
-            ("fozzy", fozzy_parser_product.fozzy_parsing_all),
-            ("fora", fora_parser_product.fora_parsing_all),
-            ("tavria", tavria_parser_product.tavria_parsing_all),
-            ("silpo", silpo_parser_product.silpo_parsing_all),
-            ("varus", varus_parser_product.varus_parsing_all),
-            ("metro", metro_parser_product.metro_parsing_all),
+            ("atb", atb_async_parser_product.atb_all_parsing, "atb.json"),
+            ("ashan", ashan_parser_product.ashan_parsing_all, "ashan.json"),
+            ("novus", novus_parser_product.novus_parsing_all, "novus.json"),
+            ("fozzy", fozzy_parser_product.fozzy_parsing_all, "fozzy.json"),
+            ("fora", fora_parser_product.fora_parsing_all, "fora.json"),
+            ("tavria", tavria_parser_product.tavria_parsing_all, "tavria.json"),
+            ("silpo", silpo_parser_product.silpo_parsing_all, "silpo.json"),
+            ("varus", varus_parser_product.varus_parsing_all, "varus.json"),
+            ("metro", metro_parser_product.metro_parsing_all, "metro.json"),
         ]
 
 
@@ -170,12 +202,18 @@ class Widget(QWidget):
 
     def show_error(self, message):
         print(f"Parser error: {message}")
-        QMessageBox.critical(self, "Помилка", f"Помилка під час запуску парсерів:\n{message}")
+        QMessageBox.warning(self, "Інформація", str(message))
 
     def worker_finished(self):
         self.start_button.setEnabled(True)
         self.thread = None
         self.worker = None
+
+    def closeEvent(self, event):
+        if self.thread is not None and self.thread.isRunning():
+            self.thread.quit()
+            self.thread.wait(2000)
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":

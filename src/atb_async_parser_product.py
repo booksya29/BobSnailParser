@@ -9,7 +9,7 @@ async def atb_parsing(page: Page, url: str):
     producer = '-'
     product_name = '-'
     try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=15000)
+        await page.goto(url, wait_until='domcontentloaded', timeout=25000)
     except TimeoutError:
         print(f"Can't load {url}")
         return
@@ -18,21 +18,24 @@ async def atb_parsing(page: Page, url: str):
         return
 
     try:
-        raw_name = await page.locator('div[class="product-about js-product-container"]').locator('h1').text_content(timeout=3000)
+        await page.wait_for_selector('div[class*="product-about"] h1', timeout=10000)
+        raw_name = await page.locator('div[class="product-about js-product-container"]').locator('h1').text_content(timeout=5000)
         product_name = raw_name.strip() if raw_name else '-'
-    except TimeoutError:
-        print(f"Can't find product name on {url}")
+    except Exception:
+        product_name = '-'
 
     try:
-        raw_bottom = await page.locator('div[class="product-about__buy-row"]').first.locator('data[class="product-price__bottom"]').first.text_content(timeout=1000)
+        await page.wait_for_selector('data[class*="product-price__bottom"]', timeout=5000)
+        raw_bottom = await page.locator('div[class="product-about__buy-row"]').first.locator('data[class="product-price__bottom"]').first.text_content(timeout=3000)
         price = raw_bottom.strip() if raw_bottom else '-'
-    except TimeoutError:
+    except Exception:
         sale_price = '-'
 
     try:
-        raw_top = await page.locator('data[class="product-price__top"]').locator('span').first.text_content(timeout=1000)
+        await page.wait_for_selector('data[class*="product-price__top"] span', timeout=3000)
+        raw_top = await page.locator('data[class="product-price__top"]').locator('span').first.text_content(timeout=3000)
         data = raw_top.strip() if raw_top else '-'
-    except TimeoutError:
+    except Exception:
         data = '-'
 
     if sale_price == '-':
@@ -41,9 +44,10 @@ async def atb_parsing(page: Page, url: str):
         sale_price = data
 
     try:
-        raw_prod = await page.locator('div[class="product-characteristics__item"]', has_text='Торгова марка').first.locator('div[class="product-characteristics__value"]').text_content(timeout=1000)
+        await page.wait_for_selector('div[class*="product-characteristics__item"]', timeout=5000)
+        raw_prod = await page.locator('div[class="product-characteristics__item"]', has_text='Торгова марка').first.locator('div[class="product-characteristics__value"]').text_content(timeout=3000)
         producer = raw_prod.strip() if raw_prod else '-'
-    except TimeoutError:
+    except Exception:
         producer = '-'
 
     data_row = {

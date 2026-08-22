@@ -5,7 +5,7 @@ from json_manager import read_json
 
 async def tavria_parsing_one(page: Page, url: str):
     try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=15000)
+        await page.goto(url, wait_until='domcontentloaded', timeout=25000)
     except TimeoutError:
         print(f"Can't load {url}")
         return
@@ -14,13 +14,15 @@ async def tavria_parsing_one(page: Page, url: str):
         return
 
     try:
-        raw_name = await page.locator('h1[data-testid="detail-name"]').text_content(timeout=3000)
+        await page.wait_for_selector('h1[data-testid="detail-name"]', timeout=10000)
+        raw_name = await page.locator('h1[data-testid="detail-name"]').text_content(timeout=5000)
         product_name = raw_name.strip() if raw_name else '-'
-    except TimeoutError:
+    except Exception:
         product_name = '-'
 
     price_block = page.locator('div[class*="cart__actions__price"]').first
     try:
+        await page.wait_for_selector('div[class*="cart__actions__price"]', timeout=6000)
         price_unform = await price_block.locator('p[data-testid*="crossed-out-old"]').text_content(timeout=3000)
         sale_price = await price_block.locator('p[class*="base__price"]').text_content(timeout=3000)
     except Exception:

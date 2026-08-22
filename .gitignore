@@ -10,7 +10,11 @@ ENV/
 *.user
 *.log
 ~$*.xlsx
+*.xlsx
 build/
 dist/
 *.spec
 *.zip
+finalize_with_browser.py
+create_dist_zip.py
+package_zip.py
