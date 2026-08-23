@@ -20,7 +20,7 @@ def clean_prod(v):
 async def check_in_stock(page: Page) -> bool:
     try:
         res = await page.evaluate('''() => {
-            const body = (document.body.innerText || '').toLowerCase();
+            const text = (document.querySelector('div.product-page, div[class*="product-details"], main')?.innerText || '').toLowerCase();
             const markers = [
                 'немає в наявності',
                 'немає на складі',
@@ -33,7 +33,7 @@ async def check_in_stock(page: Page) -> bool:
                 'тимчасово відсутній'
             ];
             for (const m of markers) {
-                if (body.includes(m)) return false;
+                if (text.includes(m)) return false;
             }
             const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
             if (outEl) return false;

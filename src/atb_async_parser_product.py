@@ -1,7 +1,7 @@
 import asyncio
 import re
 from excel_add import add_to_excel
-from patchright.async_api import Page, TimeoutError
+from patchright.async_api import Page, TimeoutError, async_playwright
 from json_manager import read_json
 
 def clean_p(v):
@@ -20,7 +20,14 @@ def clean_prod(v):
 async def check_in_stock(page: Page) -> bool:
     try:
         res = await page.evaluate('''() => {
-            const body = (document.body.innerText || '').toLowerCase();
+            const titleTop = document.querySelector('h1')?.getBoundingClientRect().top ?? 0;
+            const isProductArea = el => {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.top >= titleTop - 100 && r.top <= titleTop + 1200;
+            };
+            const text = Array.from(document.querySelectorAll(
+                'button, [role="alert"], [class*="stock"], [class*="available"]'
+            )).filter(isProductArea).map(el => el.innerText || '').join(' ').toLowerCase();
             const markers = [
                 'немає в наявності',
                 'немає на складі',
@@ -33,9 +40,11 @@ async def check_in_stock(page: Page) -> bool:
                 'тимчасово відсутній'
             ];
             for (const m of markers) {
-                if (body.includes(m)) return false;
+                if (text.includes(m)) return false;
             }
-            const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
+            const outEl = Array.from(document.querySelectorAll(
+                '[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]'
+            )).find(isProductArea);
             if (outEl) return false;
             return true;
         }''')
@@ -78,36 +87,25 @@ async def atb_parsing(page: Page, url: str):
         except Exception:
             product_name = '-'
 
-    price = '-'
-    sale_price = '-'
+    actual_price = '-'
+    old_price = '-'
+    await page.wait_for_selector('h1[class="page-title product-page__title"]', state='attached')
+    block_price = page.locator('div[class="product-about__buy-row"]').first
     try:
-        res = await page.evaluate('''() => {
-            const pb = document.querySelector('div.product-about__price, div.product-price');
-            if (!pb) return { isSale: false, top: null, bot: null, text: null };
-            const isSale = pb.classList.contains('product-price--sale') || !!pb.querySelector('.product-price--sale');
-            const top = pb.querySelector('.product-price__top, data');
-            const bot = pb.querySelector('.product-price__bottom');
-            return {
-                isSale,
-                top: top ? top.innerText : null,
-                bot: bot ? bot.innerText : null,
-                text: pb.innerText
-            };
-        }''')
-        is_sale = res.get('isSale', False)
-        top_p = res.get('top')
-        bot_p = res.get('bot')
-        raw_t = res.get('text')
-        
-        if is_sale:
-            price = bot_p if bot_p else top_p
-            sale_price = top_p if bot_p else '-'
-        else:
-            price = top_p if top_p else (raw_t if raw_t else '-')
-            sale_price = '-'
-    except Exception:
-        price = '-'
+        old_price = await block_price.locator('data[class="product-price__bottom"]').text_content(timeout=1000)
+    except TimeoutError:
+        old_price = '-'
+    try:
+        actual_price = await block_price.locator('data[class="product-price__top"]').text_content(timeout=1000)
+    except TimeoutError:
+        actual_price = '-'
+    if old_price == '-':
+        price = actual_price
         sale_price = '-'
+    else:
+        price = old_price
+        sale_price = actual_price
+
 
     producer = '-'
     try:
@@ -142,3 +140,21 @@ async def atb_all_parsing(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
+
+
+async def test():
+    async with async_playwright() as pw:
+        bw = await pw.chromium.launch(headless=False)
+        page = await bw.new_page()
+        urls = [
+    "https://www.atbmarket.com/product/cukerki-v-sokoladi-30-g-bob-snail-naturalni-ablucno-polunicni-ablucno-malinovi-kup",
+    "https://www.atbmarket.com/product/pure-200-g-elfik-agidnij-miks-dp",
+    "https://www.atbmarket.com/product/pure-110-g-elfik-krem-sup-z-kurkou-dp",
+    "https://www.atbmarket.com/product/pure-90-g-galicia-baby-ablucno-grusevo-spinatne-dp",
+    "https://www.atbmarket.com/product/pure-90-g-cudo-cado-fruktovo-agidne-z-kaseu-zlakovou-vid-6-mis",
+]
+        for item in urls:
+            await atb_parsing(page, item)
+            await asyncio.sleep(1)
+if __name__ == '__main__':
+    asyncio.run(test())

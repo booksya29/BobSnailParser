@@ -19,30 +19,14 @@ def clean_prod(v):
 
 async def check_in_stock(page: Page) -> bool:
     try:
-        res = await page.evaluate('''() => {
-            const body = (document.body.innerText || '').toLowerCase();
-            const markers = [
-                'немає в наявності',
-                'немає на складі',
-                'товар закінчився',
-                'цей товар закінчився',
-                'закінчився',
-                'повідомити про наявність',
-                'повідомити, коли з’явиться',
-                'повідомити коли з’явиться',
-                'тимчасово відсутній'
-            ];
-            for (const m of markers) {
-                if (body.includes(m)) return false;
-            }
-            const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
-            if (outEl) return false;
-            return true;
-        }''')
-        return bool(res)
-    except Exception:
-        return True
-
+        status = await page.locator('div[class*="product_product__status"]').text_content(timeout=2500)
+        print(status)
+        if status.strip() == 'Немає в наявності':
+            return False
+        else: 
+            return True
+    except:
+        return False
 async def ashan_parsing_one(page: Page, url: str):
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -78,32 +62,25 @@ async def ashan_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
-    container = page.locator('div[class*="ProductPage_productPage"], main, body').first
+    container = page.locator('div[class*="ProductPage_productPage"], main').first
     price_wrap = container.locator('div[class*="ProductPagePrice_priceWrapper"], div[class*="ProductPage_price"], div[class*="product_product__price"]').first
 
     old_price = '-'
     actual_price = '-'
     try:
-        old_el = price_wrap.locator('div[class*="ProductPagePrice_price_old"]')
-        has_old = await old_el.count() > 0
-        old_price = await old_el.first.text_content(timeout=1000) if has_old else '-'
-    except Exception:
+        old_price = await page.locator('div[class*="ProductPagePrice_price_old"]').text_content(timeout=5000)
+    except TimeoutError:
         old_price = '-'
-
     try:
-        act_el = price_wrap.locator('div[class*="ProductPagePrice_price_actual"]')
-        has_act = await act_el.count() > 0
-        actual_price = await act_el.first.text_content(timeout=1000) if has_act else '-'
-    except Exception:
+        actual_price = await page.locator('div[class*="ProductPagePrice_price_actual"]').text_content(timeout=5000)
+    except TimeoutError:
         actual_price = '-'
-
-    if old_price and old_price != '-' and old_price != '0':
-        price = old_price
-        sale_price = actual_price
-    else:
-        price = actual_price
+    if old_price == '-':
         sale_price = '-'
-
+        price = actual_price
+    else:
+        sale_price = actual_price
+        price = old_price
     producer = '-'
     try:
         producer_el = container.locator('table[class*="productDetails_features__table"] tr', has_text=re.compile(r'Бренд|Торгова марка|Виробник', re.I)).first
@@ -141,3 +118,13 @@ async def ashan_parsing_all(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
+
+
+async def test():
+    async with async_playwright() as pw:
+        bw = await pw.chromium.launch(headless=False)
+        page = await bw.new_page()
+        await ashan_parsing_one(page,"https://auchan.ua/ua/pjure-fruktovo-jagodnoe-banan-chernika-bob-snail-d-p-400g-691839/")
+        await ashan_parsing_one(page, 'https://auchan.ua/ua/detskoe-pjure-gerber-chernosliv-80-g-258087/')
+if __name__ == '__main__':
+    asyncio.run(test())

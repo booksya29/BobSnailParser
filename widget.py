@@ -4,6 +4,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from datetime import datetime
 
 if getattr(sys, "frozen", False):
     app_dir = Path(sys.executable).resolve().parent
@@ -27,11 +28,39 @@ import silpo_parser_product
 import varus_parser_product
 import metro_parser_product
 
-from PySide6.QtWidgets import QApplication, QWidget, QMessageBox
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QMessageBox, QPlainTextEdit, QPushButton,
+    QLabel, QHBoxLayout,
+)
 from PySide6.QtCore import QObject, QThread, Signal
 
 from ui_form import Ui_Widget
 from config_dialog import ConfigDialog
+
+
+class GuiLogStream(QObject):
+    """Routes print() output from the parser thread into the app window."""
+
+    line_written = Signal(str)
+
+    def __init__(self):
+        super().__init__()
+        self._buffer = ""
+
+    def write(self, text):
+        if not text:
+            return 0
+        self._buffer += str(text)
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            if line.strip():
+                self.line_written.emit(line.rstrip())
+        return len(text)
+
+    def flush(self):
+        if self._buffer.strip():
+            self.line_written.emit(self._buffer.rstrip())
+        self._buffer = ""
 
 
 class Worker(QObject):
@@ -71,6 +100,7 @@ class Worker(QObject):
                 self.progress.emit(shop_key, p)
 
             on_progress(0)
+            print(f"[{shop_key.upper()}] Початок обробки.")
             try:
                 import inspect
                 if "on_progress" in inspect.signature(parser_func).parameters:
@@ -81,16 +111,11 @@ class Worker(QObject):
                 print(f"Error parsing {shop_key}: {e}")
             finally:
                 on_progress(100)
+                print(f"[{shop_key.upper()}] Обробку завершено.")
 
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(
                 headless=False,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--window-position=-2000,-2000",
-                    "--window-size=1280,800"
-                ]
             )
             context = await browser.new_context(
                 viewport={"width": 1280, "height": 800}
@@ -144,6 +169,33 @@ class Widget(QWidget):
         self.ui.setupUi(self)
         self.setWindowTitle("Bob Snail")
 
+        self.log_output = QPlainTextEdit(self)
+        self.log_output.setReadOnly(True)
+        self.log_output.setMaximumBlockCount(3000)
+        self.log_output.setPlaceholderText("Тут з'являться повідомлення про роботу парсера…")
+        self.log_output.setMinimumHeight(190)
+        self.log_output.setStyleSheet(
+            "QPlainTextEdit { background: #151515; color: #e6e6e6; "
+            "font-family: Consolas, monospace; font-size: 10pt; }"
+        )
+        log_label = QLabel("Журнал роботи", self)
+        clear_log_button = QPushButton("Очистити журнал", self)
+        clear_log_button.clicked.connect(self.log_output.clear)
+        log_header = QHBoxLayout()
+        log_header.addWidget(log_label)
+        log_header.addStretch()
+        log_header.addWidget(clear_log_button)
+        self.ui.verticalLayout_2.addLayout(log_header)
+        self.ui.verticalLayout_2.addWidget(self.log_output)
+
+        self._original_stdout = sys.stdout
+        self._original_stderr = sys.stderr
+        self._log_stream = GuiLogStream()
+        self._log_stream.line_written.connect(self.append_log)
+        sys.stdout = self._log_stream
+        sys.stderr = self._log_stream
+        self.append_log("Програма запущена. Журнал готовий.")
+
         self.thread = None
         self.worker = None
 
@@ -180,6 +232,12 @@ class Widget(QWidget):
         if shop_key in self.progress_bars:
             self.progress_bars[shop_key].setValue(value)
 
+    def append_log(self, message: str):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_output.appendPlainText(f"[{timestamp}] {message}")
+        scrollbar = self.log_output.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
     def start_worker(self):
         if self.thread is not None and self.thread.isRunning():
             return
@@ -187,6 +245,7 @@ class Widget(QWidget):
         for pb in self.progress_bars.values():
             pb.setValue(0)
 
+        self.append_log("Запуск парсингу всіх налаштованих магазинів.")
         self.start_button.setEnabled(False)
         self.thread = QThread(self)
 
@@ -210,6 +269,7 @@ class Widget(QWidget):
         QMessageBox.warning(self, "Інформація", str(message))
 
     def worker_finished(self):
+        self.append_log("Парсинг завершено.")
         self.start_button.setEnabled(True)
         self.thread = None
         self.worker = None
@@ -218,6 +278,8 @@ class Widget(QWidget):
         if self.thread is not None and self.thread.isRunning():
             self.thread.quit()
             self.thread.wait(2000)
+        sys.stdout = self._original_stdout
+        sys.stderr = self._original_stderr
         super().closeEvent(event)
 
 

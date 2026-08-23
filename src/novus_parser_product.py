@@ -20,7 +20,7 @@ def clean_prod(v):
 async def check_in_stock(page: Page) -> bool:
     try:
         res = await page.evaluate('''() => {
-            const body = (document.body.innerText || '').toLowerCase();
+            const text = (document.querySelector('div[data-marker="Big Product Cart"], div[class*="BigProductCard"], main')?.innerText || '').toLowerCase();
             const markers = [
                 'немає в наявності',
                 'немає на складі',
@@ -32,7 +32,7 @@ async def check_in_stock(page: Page) -> bool:
                 'тимчасово відсутній'
             ];
             for (const m of markers) {
-                if (body.includes(m)) return false;
+                if (text.includes(m)) return false;
             }
             const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
             if (outEl) return false;
@@ -76,7 +76,7 @@ async def novus_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
-    container = page.locator('div[data-marker="Big Product Cart"], div[class*="BigProductCard"], main, body').first
+    container = page.locator('div[data-marker="Big Product Cart"], div[class*="BigProductCard"], main').first
     price_info = container.locator('div[class*="BigProductCardTopInfo__priceInfo"], div[data-marker="Big Product Cart"]').first
 
     price = '-'
@@ -135,3 +135,12 @@ async def novus_parsing_all(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
+
+async def test():
+    async with async_playwright() as pw:
+        bw = await pw.chromium.launch(headless=False)
+        page = await bw.new_page()
+        await novus_parsing_one(page, "https://novus.zakaz.ua/uk/products/tsukerka-100g-ukrayina--04820219346524/")
+
+if __name__ == '__main__':
+    asyncio.run(test())

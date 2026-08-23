@@ -20,7 +20,7 @@ def clean_prod(v):
 async def check_in_stock(page: Page) -> bool:
     try:
         res = await page.evaluate('''() => {
-            const body = (document.body.innerText || '').toLowerCase();
+            const text = (document.querySelector('div[data-marker="Big Product Cart"], div[class*="BigProductCard"], div.ev-productview-details--right-col, main')?.innerText || '').toLowerCase();
             const markers = [
                 'немає в наявності',
                 'немає на складі',
@@ -33,7 +33,7 @@ async def check_in_stock(page: Page) -> bool:
                 'тимчасово відсутній'
             ];
             for (const m of markers) {
-                if (body.includes(m)) return false;
+                if (text.includes(m)) return false;
             }
             const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
             if (outEl) return false;
@@ -78,80 +78,34 @@ async def metro_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
-    price = '-'
-    sale_price = '-'
-    producer = '-'
+    old_price = '-'
+    actual_price = ''
+    block_price = page.locator('div[class*="price-container"]').first
+    print('Почав чекати')
+    await page.wait_for_selector('div[class*="price-container"]', state='attached')
+    print('Закінчив')
+    try:
+        old_price = await block_price.locator('span[class*="price-breakdown strike"]').text_content(timeout=2500)
+    except TimeoutError:
+        old_price = '-'
 
-    if "zakaz.ua" in url:
-        container = page.locator('div[data-marker="Big Product Cart"], div[class*="BigProductCard"], main, body').first
-        price_info = container.locator('div[class*="BigProductCardTopInfo__priceInfo"], div[data-marker="Big Product Cart"]').first
-        try:
-            old_el = price_info.locator('span[data-marker="Old Price"], div[data-marker="Old Price"]')
-            act_el = price_info.locator('span[data-marker="Discounted Price"], span[data-marker="Price"], div[data-marker="Discounted Price"], div[data-marker="Price"]')
-            has_old = await old_el.count() > 0
-            old_val = await old_el.first.text_content(timeout=1000) if has_old else '-'
-            act_val = await act_el.first.text_content(timeout=1000) if await act_el.count() > 0 else '-'
+    try:
+        actual_price = await block_price.locator('span[class*="price-breakdown primary"], span[class*="price-breakdown primary promotion"]').first.text_content(timeout=2500)
+    except TimeoutError:
+        actual_price = '-'    
 
-            if has_old and old_val and old_val != '-':
-                price = old_val
-                sale_price = act_val
-            else:
-                price = act_val
-                sale_price = '-'
-        except Exception:
-            price = '-'
-            sale_price = '-'
-
-        try:
-            raw_producer = await page.locator('li[data-marker*="tm"], li', has_text=re.compile(r'Бренд|ТМ|Виробник', re.I)).first.text_content(timeout=1000)
-            if raw_producer and (":" in raw_producer or "\n" in raw_producer):
-                parts = re.split(r'[:\n]+', raw_producer)
-                producer = parts[-1].strip() if len(parts) > 1 else raw_producer.strip()
-            else:
-                producer = raw_producer.strip() if raw_producer else '-'
-        except Exception:
-            producer = '-'
+    if old_price == '-':
+        price = actual_price
+        sale_price = '-'
     else:
-        try:
-            res = await page.evaluate('''() => {
-                const rightCol = document.querySelector('div.ev-productview-details--right-col, div[class*="article-detail"], main') || document.body;
-                const strikeEl = rightCol.querySelector('span.strike, span[class*="strike"]');
-                const promoEl = rightCol.querySelector('span.promotion, span[class*="promotion"]');
-                const primaryEl = rightCol.querySelector('span.primary, span[class*="primary"], div.mfcss_article-detail--price-container');
-                
-                let brand = '-';
-                const brandHeader = Array.from(rightCol.querySelectorAll('*')).find(e => e.innerText && e.innerText.trim() === 'Бренд');
-                if (brandHeader && brandHeader.nextElementSibling) {
-                    brand = brandHeader.nextElementSibling.innerText.trim();
-                }
+        price = old_price
+        sale_price = actual_price
 
-                return {
-                    strike: strikeEl ? strikeEl.innerText : null,
-                    promo: promoEl ? promoEl.innerText : null,
-                    primary: primaryEl ? primaryEl.innerText : null,
-                    brand
-                };
-            }''')
-
-            strike = res.get('strike')
-            promo = res.get('promo')
-            primary = res.get('primary')
-            producer = res.get('brand', '-')
-
-            if strike and promo:
-                price = strike
-                sale_price = promo
-            elif promo:
-                price = promo
-                sale_price = '-'
-            else:
-                price = primary if primary else '-'
-                sale_price = '-'
-        except Exception:
-            price = '-'
-            sale_price = '-'
-            producer = '-'
-
+    producer = '-'    
+    try:
+        producer = await page.locator('div[class*="article-detail--overview"]').locator('p', has_text='Бренд').locator('span').nth(1).locator('span').text_content(timeout=2500)
+    except TimeoutError:
+        pass
     data = {
         'shop': 'Метро',
         'name': product_name,
@@ -178,3 +132,12 @@ async def metro_parsing_all(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
+
+async def test():
+    async with async_playwright() as pw:
+        bw = await pw.chromium.launch(headless=False)
+        page = await bw.new_page()
+        await metro_parsing_one(page, 'https://shop.metro.ua/shop/pv/BTY-X329177/0032/0021/Bob-Snail-%D0%A6%D1%83%D0%BA%D0%B5%D1%80%D0%BA%D0%B8-%D0%9C%D0%B0%D0%BD%D0%B3%D0%BE-%D1%83-%D1%88%D0%BE%D0%BA%D0%BE%D0%BB%D0%B0%D0%B4%D1%96-60%D0%B3?_gl=1*1dkbhlu*_gcl_au*NDg4MjMwNjUxLjE3ODcwNDIxOTM.*_ga*ODIwNjkzNDMzLjE3ODcwNDIxOTQ.*_ga_QTSLSYDDZN*czE3ODc0MjA4OTYkbzMkZzEkdDE3ODc0MjExMTgkajUwJGwwJGgw')
+
+if __name__ == '__main__':
+    asyncio.run(test())

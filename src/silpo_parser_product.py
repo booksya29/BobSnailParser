@@ -20,7 +20,7 @@ def clean_prod(v):
 async def check_in_stock(page: Page) -> bool:
     try:
         res = await page.evaluate('''() => {
-            const body = (document.body.innerText || '').toLowerCase();
+            const text = (document.querySelector('div[class*="product-page__content"], div.product-page, main')?.innerText || '').toLowerCase();
             const markers = [
                 'немає в наявності',
                 'немає на складі',
@@ -33,7 +33,7 @@ async def check_in_stock(page: Page) -> bool:
                 'тимчасово відсутній'
             ];
             for (const m of markers) {
-                if (body.includes(m)) return false;
+                if (text.includes(m)) return false;
             }
             const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
             if (outEl) return false;
@@ -78,39 +78,36 @@ async def silpo_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
-    container = page.locator('div[class*="product-page__content"], div.product-page, main, body').first
+    container = page.locator('div[class*="product-page__content"], div.product-page, main').first
     price_wrap = container.locator('div.prices-row, div[class*="product-page__price"], div.product-price').first
 
+    actual_price = '-'
     old_price = '-'
-    new_price = '-'
+    block_price = page.locator('div[class="prices-row"]')
+    await page.wait_for_selector('div[class="prices-row"]', state='attached')
     try:
-        old_el = price_wrap.locator('del.sale-price__old, del')
-        has_old = await old_el.count() > 0
-        old_price = await old_el.first.text_content(timeout=1000) if has_old else '-'
-    except Exception:
+        actual_price = await block_price.locator('span[data-autotestid="product-main-price"]').text_content(timeout=2500)
+    except TimeoutError:
+        actual_price = '-'
+
+    try: 
+        old_price = await block_price.locator('del[data-autotestid="product-price-old"]').text_content(timeout=2500)
+    except TimeoutError:
         old_price = '-'
 
-    try:
-        main_el = price_wrap.locator('span.main-price, div[class*="product-price"], span')
-        has_main = await main_el.count() > 0
-        new_price = await main_el.first.text_content(timeout=1000) if has_main else '-'
-    except Exception:
-        new_price = '-'
-
-    if old_price and old_price != '-':
-        price = old_price
-        sale_price = new_price
-    else:
-        price = new_price
+    if old_price == '-':
+        price = actual_price
         sale_price = '-'
+    else:
+        price = old_price
+        sale_price = actual_price
 
     producer = '-'
     try:
-        raw_producer = await container.locator('div[class*="product-page__brand"] a, a[href*="/brand/"]').first.text_content(timeout=1000)
-        producer = raw_producer.strip() if raw_producer else '-'
-    except Exception:
+        producer_block = page.locator('div[class="mat-expansion-panel-body"]')
+        producer = await producer_block.locator('div[class="attributes-list_block"]', has_text='Торгова марка').locator('a').text_content(timeout=2500)
+    except TimeoutError:
         producer = '-'
-
     data = {
         'shop': 'Сільпо',
         'name': product_name,
@@ -137,3 +134,19 @@ async def silpo_parsing_all(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
+
+
+async def test():
+    async with async_playwright() as pw:
+        bw = await pw.chromium.launch(headless=False)
+        page = await bw.new_page()
+        silpo_urls = [
+    "https://silpo.ua/product/piure-gerber-iabluko-morkva-garbuz-931700",
+    "https://silpo.ua/product/smuzi-jaffa-z-bananiv-iabluk-chornytsi-ta-polunytsi-peretertykh-zi-zlakamy-743770",
+]
+        for url in silpo_urls:
+            await silpo_parsing_one(page, url)
+            await asyncio.sleep(1)
+
+if __name__ == '__main__':
+    asyncio.run(test())

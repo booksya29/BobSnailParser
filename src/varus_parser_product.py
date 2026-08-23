@@ -20,7 +20,14 @@ def clean_prod(v):
 async def check_in_stock(page: Page) -> bool:
     try:
         res = await page.evaluate('''() => {
-            const body = (document.body.innerText || '').toLowerCase();
+            const titleTop = document.querySelector('h1')?.getBoundingClientRect().top ?? 0;
+            const isProductArea = el => {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.top >= titleTop - 100 && r.top <= titleTop + 1200;
+            };
+            const text = Array.from(document.querySelectorAll(
+                'button, [role="alert"], [class*="stock"], [class*="available"]'
+            )).filter(isProductArea).map(el => el.innerText || '').join(' ').toLowerCase();
             const markers = [
                 'немає в наявності',
                 'немає на складі',
@@ -32,9 +39,11 @@ async def check_in_stock(page: Page) -> bool:
                 'тимчасово відсутній'
             ];
             for (const m of markers) {
-                if (body.includes(m)) return false;
+                if (text.includes(m)) return false;
             }
-            const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
+            const outEl = Array.from(document.querySelectorAll(
+                '[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]'
+            )).find(isProductArea);
             if (outEl) return false;
             return true;
         }''')
@@ -77,32 +86,35 @@ async def varus_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
-    # 2. Extract Prices
-    price = '-'
-    sale_price = '-'
+    old_price = '-'
+    actual_price = '-'
+    block_price = page.locator('div[class="price"]').first
+    print('Чекаю на selector')
+    await page.wait_for_selector('div[class="price"], button[class="sf-button sf-button--outline btn-not-available"]', state='attached')
+    print('Дочекався')
     try:
-        res = await page.evaluate('''() => {
-            const delEl = document.querySelector('div.m-product-short-info__price-section del, div.product-page__price del, del.sf-price__old, del');
-            const insEl = document.querySelector('div.m-product-short-info__price-section ins, div.product-page__price ins, ins.sf-price__special, ins');
-            const regEl = document.querySelector('div.m-product-short-info__price-section span.sf-price__regular, div.product-page__price .sf-price, span.sf-price__regular');
-            return {
-                old: delEl ? delEl.innerText : null,
-                act: insEl ? insEl.innerText : (regEl ? regEl.innerText : null)
-            };
-        }''')
-        old_p = res.get('old')
-        act_p = res.get('act')
-        if old_p and old_p != '-' and 'закінчився' not in str(old_p).lower():
-            price = old_p
-            sale_price = act_p if act_p else '-'
-        else:
-            price = act_p if act_p else '-'
-            sale_price = '-'
-    except Exception:
-        price = '-'
-        sale_price = '-'
+        old_price = await block_price.locator('del[class="sf-price__old"]').text_content(timeout=1000)
+    except TimeoutError:
+        old_price = '-'
 
-    # 3. Extract Producer
+    try:
+        regular_price = await block_price.locator('span[class*="sf-price__regular"]').text_content(timeout=1000)
+    except TimeoutError as e:
+        print(e)
+        regular_price = '-'
+
+    try:
+        actual_price = await block_price.locator('ins[class*="sf-price__special"]').text_content(timeout=1000)    
+    except TimeoutError:
+        actual_price = '-'
+
+
+    if old_price == '-':
+        price = regular_price
+        sale_price = '-'
+    else:
+        price = old_price
+        sale_price = actual_price
     producer = '-'
     try:
         raw_producer = await page.locator('div[class*="characteristics"], div', has_text=re.compile(r'Бренд|Торгова марка|Виробник', re.I)).first.locator('div').nth(1).text_content(timeout=1000)
@@ -136,3 +148,14 @@ async def varus_parsing_all(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
+
+
+async def test():
+    async with async_playwright() as pw:
+        bw = await pw.chromium.launch(headless=False)
+        page = await bw.new_page()
+
+        await varus_parsing_one(page, url='https://varus.ua/marmelad-bob-snail-grusha-apelsin-v-belgijskom-molochnom-shokolade-naturalnyj-54-g')
+        await varus_parsing_one(page, url='https://varus.ua/pyure-yabluko-grusha-ravlik-bob-pauch-90g')
+if __name__ == '__main__':
+    asyncio.run(test())

@@ -18,3 +18,4 @@ dist/
 finalize_with_browser.py
 create_dist_zip.py
 package_zip.py
+release/

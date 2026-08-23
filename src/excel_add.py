@@ -16,6 +16,14 @@ _excel_lock = asyncio.Lock()
 async def add_to_excel(data: dict):
     if not data or not isinstance(data, dict):
         return
+    shop = data.get("shop", "Невідомий магазин")
+    url = data.get("url", "")
+    if data.get("name", "-") == "-":
+        print(f"[{shop}] Не вдалося знайти назву товару: {url}")
+    if data.get("price", "-") == "-":
+        print(f"[{shop}] Не вдалося знайти ціну основного товару: {url}")
+    else:
+        print(f"[{shop}] Знайдено ціну: {data['price']}; акційна: {data.get('sale_price', '-')}")
     global file_name
     async with _excel_lock:
         for attempt in range(5):
@@ -30,8 +38,10 @@ async def add_to_excel(data: dict):
                     combined_data.to_excel(file_name, index=False)
                 else:
                     new_data.to_excel(file_name, index=False)
+                print(f"[{shop}] Дані записано у {file_name.name}.")
                 break
             except PermissionError:
+                print(f"[{shop}] Не можу записати {file_name.name}: закрийте файл Excel і спробуйте ще раз.")
                 await asyncio.sleep(1)
             except Exception as error:
                 print(f"Error saving to Excel: {error}")

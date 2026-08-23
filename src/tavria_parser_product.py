@@ -20,7 +20,7 @@ def clean_prod(v):
 async def check_in_stock(page: Page) -> bool:
     try:
         res = await page.evaluate('''() => {
-            const body = (document.body.innerText || '').toLowerCase();
+            const text = (document.querySelector('div[class*="product-detail"], div.product-page, main')?.innerText || '').toLowerCase();
             const markers = [
                 'немає в наявності',
                 'немає на складі',
@@ -33,7 +33,7 @@ async def check_in_stock(page: Page) -> bool:
                 'тимчасово відсутній'
             ];
             for (const m of markers) {
-                if (body.includes(m)) return false;
+                if (text.includes(m)) return false;
             }
             const outEl = document.querySelector('[data-marker*="Out of Stock"], [data-marker*="outOfStock"], .out-of-stock, [class*="not-available"]');
             if (outEl) return false;
@@ -78,7 +78,7 @@ async def tavria_parsing_one(page: Page, url: str):
         except Exception:
             product_name = '-'
 
-    container = page.locator('div[class*="product-detail"], div.product-page, main, body').first
+    container = page.locator('div[class*="product-detail"], div.product-page, main').first
     actions_price = container.locator('div[class*="cart__actions__price"], div[class*="actions__price"]').first
 
     price = '-'
