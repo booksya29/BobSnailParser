@@ -16,7 +16,7 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QGridLayout, QHBoxLayout, QLabel,
-    QProgressBar, QPushButton, QSizePolicy, QVBoxLayout,
+    QProgressBar, QPushButton, QSizePolicy, QTabWidget, QVBoxLayout,
     QWidget)
 
 class Ui_Widget(object):
@@ -26,7 +26,11 @@ class Ui_Widget(object):
         Widget.resize(1920, 1080)
         self.gridLayout = QGridLayout(Widget)
         self.gridLayout.setObjectName(u"gridLayout")
-        self.verticalLayout_2 = QVBoxLayout()
+        self.tabWidget = QTabWidget(Widget)
+        self.tabWidget.setObjectName(u"tabWidget")
+        self.main = QWidget()
+        self.main.setObjectName(u"main")
+        self.verticalLayout_2 = QVBoxLayout(self.main)
         self.verticalLayout_2.setSpacing(12)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
         self.verticalLayout = QVBoxLayout()
@@ -305,11 +309,24 @@ class Ui_Widget(object):
 
         self.verticalLayout_2.addLayout(self.actionsLayout)
 
+        self.tabWidget.addTab(self.main, "")
+        self.new = QWidget()
+        self.new.setObjectName(u"new")
+        self.verticalLayout_new = QVBoxLayout(self.new)
+        self.verticalLayout_new.setObjectName(u"verticalLayout_new")
+        self.tabWidget.addTab(self.new, "")
 
-        self.gridLayout.addLayout(self.verticalLayout_2, 0, 0, 1, 1)
+        self.gridLayout.addWidget(self.tabWidget, 0, 0, 1, 1)
 
+        # Aliases
+        self.tab_main = self.main
+        self.main_tab = self.main
+        self.tab_new = self.new
+        self.new_tab = self.new
 
         self.retranslateUi(Widget)
+
+        self.tabWidget.setCurrentIndex(0)
 
         QMetaObject.connectSlotsByName(Widget)
     # setupUi
@@ -345,5 +362,7 @@ class Ui_Widget(object):
         self.TavriaButton.setText(QCoreApplication.translate("Widget", u"\u0412\u0456\u0434\u0440\u0435\u0434\u0430\u0433\u0443\u0432\u0430\u0442\u0438 \u043a\u043e\u043d\u0444\u0456\u0433", None))
         self.StartButton.setText(QCoreApplication.translate("Widget", u"\u0421\u0442\u0430\u0440\u0442", None))
         self.StopButton.setText(QCoreApplication.translate("Widget", u"\u0421\u0442\u043e\u043f", None))
+        self.tabWidget.setTabText(self.tabWidget.indexOf(self.main), QCoreApplication.translate("Widget", u"main", None))
+        self.tabWidget.setTabText(self.tabWidget.indexOf(self.new), QCoreApplication.translate("Widget", u"new", None))
     # retranslateUi
 

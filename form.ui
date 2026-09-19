@@ -15,10 +15,18 @@
   </property>
   <layout class="QGridLayout" name="gridLayout">
    <item row="0" column="0">
-    <layout class="QVBoxLayout" name="verticalLayout_2">
-     <property name="spacing">
-      <number>12</number>
+    <widget class="QTabWidget" name="tabWidget">
+     <property name="currentIndex">
+      <number>0</number>
      </property>
+     <widget class="QWidget" name="main">
+      <attribute name="title">
+       <string>main</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_2">
+       <property name="spacing">
+        <number>12</number>
+       </property>
      <item>
       <layout class="QVBoxLayout" name="verticalLayout">
        <property name="spacing">
@@ -428,7 +436,15 @@
        </item>
       </layout>
      </item>
-    </layout>
+     </layout>
+    </widget>
+     <widget class="QWidget" name="new">
+      <attribute name="title">
+       <string>new</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_new"/>
+     </widget>
+    </widget>
    </item>
   </layout>
  </widget>
