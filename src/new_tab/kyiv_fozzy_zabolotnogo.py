@@ -10,7 +10,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 import asyncio
 import re
 from patchright.async_api import async_playwright, TimeoutError, Page
-from excel_add import add_to_excel
+from excel_add import add_to_excel_new
 from json_manager import read_json
 
 
@@ -163,7 +163,6 @@ async def fozzy_parsing_one(page: Page, url: str):
 
         check_registration_bool = await check_registration(page)
     await select_addr(page)
-    await page.pause()
     await page.goto(url)
     await page.wait_for_load_state('domcontentloaded')
     product_name = '-'
@@ -281,22 +280,23 @@ async def fozzy_parsing_one(page: Page, url: str):
         id = '-'
 
     data = {
-        'shop': 'Фоззі',
+        'shop': 'Fozzy',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
         'producer': clean_prod(producer),
         'url': page.url,
-        'id': id
+        'id': id,
+        'Адреса': 'Київ. Заболотного 37'
     }
 
-    await add_to_excel(data)
+    await add_to_excel_new(data)
 
     print(data)
 
 
 async def fozzy_parsing_all(page: Page, on_progress=None):
-    data = await read_json('fozzy.json')
+    data = await read_json('kyiv_fozzy_zabolotnogo.json')
 
     if not data:
         if on_progress:

@@ -5,7 +5,7 @@ import asyncio
 import re
 from patchright.async_api import async_playwright, Page, TimeoutError
 from json_manager import read_json
-from excel_add import add_to_excel
+from excel_add import add_to_excel_new
 async def select_addr(page:Page):
     addr_name = (await page.locator('li[class="header-info-item location is_not_mobile"]').text_content()).strip()
     if "Берестейський" in addr_name:
@@ -140,13 +140,14 @@ async def fora_parsing_one(page: Page, url: str):
         'sale_price': clean_p(sale_price),
         'producer': clean_prod(producer),
         'url': page.url,
-        'id':id
+        'id':id,
+        'Адреса': 'Київ. Берестейський 60'
     }
-    await add_to_excel(data)
+    await add_to_excel_new(data)
     print(data)
 
 async def fora_parsing_all(page: Page, on_progress=None):
-    data = await read_json('fora.json')
+    data = await read_json('kyiv_fora_berest.json')
     if not data:
         if on_progress:
             on_progress(100)

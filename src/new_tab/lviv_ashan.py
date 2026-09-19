@@ -8,7 +8,7 @@ import asyncio
 import re
 from patchright.async_api import async_playwright, Page, TimeoutError
 from json_manager import read_json
-from excel_add import add_to_excel
+from excel_add import add_to_excel_new
 
 async def check_addr(page:Page) -> bool:
     try:
@@ -136,19 +136,20 @@ async def ashan_parsing_one(page: Page, url: str):
 
     id = page.url.split('--')[1][1::].replace('/', '')
     data = {
-        'shop': 'Львів Auchan (Львів) Львів',
+        'shop': 'Auchan',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
         'producer': clean_prod(producer),
         'url': page.url,
-        'id':id
+        'id':id,
+        'Адреса': 'Львів. Сокільники, Стрийська 30'
     }
-    await add_to_excel(data)
+    await add_to_excel_new(data)
     print(data)
 
 async def ashan_parsing_all(page: Page, on_progress=None):
-    data = await read_json('novus.json')
+    data = await read_json('lviv_ashan.json')
     if not data:
         if on_progress:
             on_progress(100)

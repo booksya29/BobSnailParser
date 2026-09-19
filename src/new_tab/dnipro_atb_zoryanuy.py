@@ -3,7 +3,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 import asyncio
 import re
-from excel_add import add_to_excel
+from excel_add import add_to_excel_new
 from patchright.async_api import Page, TimeoutError, async_playwright
 from json_manager import read_json
 addr_dict = {
@@ -156,13 +156,14 @@ async def atb_parsing(page: Page, url: str):
         'sale_price': clean_p(sale_price),
         'producer': clean_prod(producer),
         'url': page.url,
-        'id':id.strip()
+        'id':id.strip(),
+        'Адреса': 'Дніпро. Зоряний 3'
     }
-    await add_to_excel(data_row)
+    await add_to_excel_new(data_row)
     print(data_row)
 
 async def atb_all_parsing(page: Page, on_progress=None):
-    url_list = await read_json('atb.json')
+    url_list = await read_json('dnipro_atb_zoryanuy.json')
     if not url_list:
         if on_progress:
             on_progress(100)

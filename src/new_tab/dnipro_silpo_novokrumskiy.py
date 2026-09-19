@@ -5,7 +5,7 @@ import asyncio
 import re
 from patchright.async_api import async_playwright, Page, TimeoutError
 from json_manager import add_json, read_json
-from excel_add import add_to_excel
+from excel_add import add_to_excel_new
 
 
 async def select_addr(page:Page):
@@ -127,13 +127,14 @@ async def silpo_parsing_one(page: Page, url: str):
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
         'producer': clean_prod(producer),
-        'url': page.url
+        'url': page.url,
+        'Адреса': 'Дніпро. Новокримська 3А'
     }
-    await add_to_excel(data)
+    await add_to_excel_new(data)
     print(data)
 
 async def silpo_parsing_all(page: Page, on_progress=None):
-    data = await read_json('silpo.json')
+    data = await read_json('dnipro_silpo_novokrumskiy.json')
     if not data:
         if on_progress:
             on_progress(100)

@@ -100,7 +100,7 @@ def build() -> bool:
         "numba", "h5py", "pywt", "bottleneck", "tables", "sqlalchemy",
         "IPython", "pytest", "black", "sphinx", "docutils", "dask",
         "astroid", "nbformat", "notebook", "jupyter", "zmq", "mistune",
-        "jsonschema", "jedi", "pygments", "tkinter", "_tkinter",
+        "jsonschema", "jedi", "pygments",
         "sqlite3", "pycparser", "setuptools", "wheel", "pip",
         "panel", "plotly", "xarray", "altair", "nbconvert", "intake",
     ]
@@ -108,12 +108,40 @@ def build() -> bool:
     for exc in excludes:
         exclude_args.extend(["--exclude-module", exc])
 
+    new_tab_modules = [
+        "dnipro_fozzy",
+        "kyiv_fozzy_zabolotnogo",
+        "ashan_banderu",
+        "ashan_dnipro",
+        "lviv_ashan",
+        "odesa_ashan",
+        "dripro_metro",
+        "lviv_metro",
+        "odesa_metro",
+        "kyiv_metro",
+        "kharkiv_metro",
+        "kyiv_novus_zdolbunivska",
+        "kyiv_varus_malushka",
+        "dnipro_varus_panikahi",
+        "dnipro_atb_zoryanuy",
+        "kyiv_atb_rudnutskogo",
+        "kyiv_silpo_beresteyski",
+        "dnipro_silpo_novokrumskiy",
+        "lviv_silpo_kulparivska",
+        "kyiv_fora_berest",
+    ]
+    hidden_args = []
+    for mod in new_tab_modules:
+        hidden_args.extend(["--hidden-import", mod])
+
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconsole",
         "--onedir",
         "--distpath", str(OUTPUT_ROOT),
-        "--paths", "src",
+        "--paths", str(ROOT / "src"),
+        "--paths", str(ROOT / "src" / "new_tab"),
+        *hidden_args,
         *exclude_args,
         "--collect-all", "patchright",
         "--collect-all", "openpyxl",
@@ -136,6 +164,19 @@ def build() -> bool:
             py_file.unlink()
         except Exception:
             pass
+
+    # Переконуємося, що всі файли urls_db та storage_state є в dist
+    src_db = ROOT / "src" / "urls_db"
+    for dest_parent in [DIST_DIR, DIST_DIR / "_internal"]:
+        dest_db = dest_parent / "src" / "urls_db"
+        dest_db.mkdir(parents=True, exist_ok=True)
+        if src_db.exists():
+            for item in src_db.glob("*.json"):
+                shutil.copy2(item, dest_db / item.name)
+
+    st_file = ROOT / "storage_state.json"
+    if st_file.exists():
+        shutil.copy2(st_file, DIST_DIR / "storage_state.json")
 
     print("\n=== 3. Вшивання браузера Chromium (Patchright) ===")
     local_browsers_dst = DIST_DIR / "_internal" / "patchright" / "driver" / "package" / ".local-browsers"
