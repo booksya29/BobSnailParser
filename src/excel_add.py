@@ -4,6 +4,7 @@ import sys
 import time
 from pathlib import Path
 import pandas
+from patchright.async_api import async_playwright
 
 if getattr(sys, "frozen", False):
     file_name = Path(sys.executable).resolve().parent / "data.xlsx"
@@ -14,6 +15,7 @@ _excel_lock = asyncio.Lock()
 
 
 async def add_to_excel(data: dict):
+    data['time'] = time.strftime("%d.%m.%Y", time.localtime())
     if not data or not isinstance(data, dict):
         return
     shop = data.get("shop", "Невідомий магазин")

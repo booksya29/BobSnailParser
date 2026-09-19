@@ -44,13 +44,17 @@ async def check_in_stock(page: Page) -> bool:
         return True
 
 async def metro_parsing_one(page: Page, url: str):
-    try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-    except TimeoutError:
-        print(f"Can't load {url}")
-        return
-    except Exception as e:
-        print(f"Error navigating to {url}: {e}")
+    for _ in range(3):
+        try:
+            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            await page.wait_for_selector('h1, h2', timeout=15000)
+            break
+        except TimeoutError:
+            print(f"Can't load {url}")
+        except Exception as e:
+            print(f"Error navigating to {url}: {e}")
+        await asyncio.sleep(3)
+    else:
         return
 
     # 1. Hydrate Title (up to 8s)
@@ -106,13 +110,19 @@ async def metro_parsing_one(page: Page, url: str):
         producer = await page.locator('div[class*="article-detail--overview"]').locator('p', has_text='Бренд').locator('span').nth(1).locator('span').text_content(timeout=2500)
     except TimeoutError:
         pass
+
+    try: 
+        id = await page.locator('div[class*="articlenumber"]').text_content()
+    except TimeoutError:
+        id = '-'
     data = {
         'shop': 'Метро',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
         'producer': clean_prod(producer),
-        'url': page.url
+        'url': page.url,
+        'id':id.strip()
     }
     await add_to_excel(data)
     print(data)
@@ -137,7 +147,9 @@ async def test():
     async with async_playwright() as pw:
         bw = await pw.chromium.launch(headless=False)
         page = await bw.new_page()
-        await metro_parsing_one(page, 'https://shop.metro.ua/shop/pv/BTY-X329177/0032/0021/Bob-Snail-%D0%A6%D1%83%D0%BA%D0%B5%D1%80%D0%BA%D0%B8-%D0%9C%D0%B0%D0%BD%D0%B3%D0%BE-%D1%83-%D1%88%D0%BE%D0%BA%D0%BE%D0%BB%D0%B0%D0%B4%D1%96-60%D0%B3?_gl=1*1dkbhlu*_gcl_au*NDg4MjMwNjUxLjE3ODcwNDIxOTM.*_ga*ODIwNjkzNDMzLjE3ODcwNDIxOTQ.*_ga_QTSLSYDDZN*czE3ODc0MjA4OTYkbzMkZzEkdDE3ODc0MjExMTgkajUwJGwwJGgw')
+        urls = ['https://shop.metro.ua/shop/pv/BTY-X382554/0032/0021/Bob-Snail-%D0%9F%D1%8E%D1%80%D0%B5-%D0%91%D0%B0%D0%BD%D0%B0%D0%BD-%D1%87%D0%BE%D1%80%D0%BD%D0%B0-%D1%81%D0%BC%D0%BE%D1%80%D0%BE%D0%B4%D0%B8%D0%BD%D0%B0-%D1%84%D1%80%D1%83%D0%BA%D1%82%D0%BE%D0%B2%D0%BE-%D1%8F%D0%B3%D1%96%D0%B4%D0%BD%D0%B5-120%D0%B3', 'https://shop.metro.ua/shop/pv/BTY-X382552/0032/0021/Bob-Snail-%D0%9F%D1%8E%D1%80%D0%B5-Smoothie-Banana-Raspberry-120%D0%B3', 'https://shop.metro.ua/shop/pv/BTY-X337476/0032/0021/Bob-Snail-%D0%9F%D1%8E%D1%80%D0%B5-%D0%A1%D0%BC%D1%83%D0%B7%D1%96-%D0%93%D1%80%D1%83%D1%88%D0%B0-%D0%BB%D1%96%D1%81%D0%BE%D0%B2%D0%B0-%D0%BE%D0%B6%D0%B8%D0%BD%D0%B0-%D1%84%D1%80%D1%83%D0%BA%D1%82%D0%BE%D0%B2%D0%BE-%D1%8F%D0%B3%D1%96%D0%B4%D0%BD%D0%B5-120%D0%B3']
 
+        for i in urls:
+            await metro_parsing_one(page, i)
 if __name__ == '__main__':
     asyncio.run(test())

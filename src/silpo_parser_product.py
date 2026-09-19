@@ -44,13 +44,17 @@ async def check_in_stock(page: Page) -> bool:
         return True
 
 async def silpo_parsing_one(page: Page, url: str):
-    try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-    except TimeoutError:
-        print(f"Can't load {url}")
-        return
-    except Exception as e:
-        print(f"Error navigating to {url}: {e}")
+    for _ in range(3):
+        try:
+            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            await page.wait_for_selector('h1', timeout=15000)
+            break
+        except TimeoutError:
+            print(f"Can't load {url}")
+        except Exception as e:
+            print(f"Error navigating to {url}: {e}")
+        await asyncio.sleep(3)
+    else:
         return
 
     # 1. Hydrate Title (up to 6s)
@@ -108,6 +112,8 @@ async def silpo_parsing_one(page: Page, url: str):
         producer = await producer_block.locator('div[class="attributes-list_block"]', has_text='Торгова марка').locator('a').text_content(timeout=2500)
     except TimeoutError:
         producer = '-'
+
+
     data = {
         'shop': 'Сільпо',
         'name': product_name,

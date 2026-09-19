@@ -3,7 +3,22 @@ import re
 from excel_add import add_to_excel
 from patchright.async_api import Page, TimeoutError, async_playwright
 from json_manager import read_json
+addr_dict = {
+    '1':'вул. Григоровича-Барського, 1',
+    '2':"вул. Лук'яненка Левка, буд. 21/2-прим.(гр.пр.)102,1",
+    '3':"просп. Оболонський, 52 а"
+    }
 
+async def select_addr(page:Page, adr):
+    try:
+        await page.locator('button[class*="delivery-info__button"]').nth(1).click(timeout=1500)
+    except:
+        await page.locator('button[class*="delivery-info__button"]').first.click(timeout=1500)    
+    await page.locator('div[class="city-modal__delivery-option"]').locator('div[class="square-input"]').nth(1).click()
+    await page.locator('label[class="custom-select street-select"]').first.click()
+    await page.locator('li', has_text=addr_dict[adr]).click()
+    await page.locator('button[class="btn btn--green city-modal__submit city-modal__submit--bottom js-city-modal-submit"]').click()
+    await page.wait_for_load_state('networkidle')
 def clean_p(v):
     if not v or v == '-' or v == 0 or v == '0':
         return '-'
@@ -51,17 +66,26 @@ async def check_in_stock(page: Page) -> bool:
         return bool(res)
     except Exception:
         return True
+def addr_split(url:str):
+    url_list = url.split('&&&')
+    return url_list[0], url_list[1]
 
-async def atb_parsing(page: Page, url: str):
-    try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-    except TimeoutError:
-        print(f"Can't load {url}")
-        return
-    except Exception as e:
-        print(f"Error navigating to {url}: {e}")
+async def atb_parsing(page: Page, url_not_sep: str):
+    url, addr = addr_split(url_not_sep)
+    for _ in range(3):
+        try:
+            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            await page.wait_for_selector('h1', timeout=15000)
+            break
+        except TimeoutError:
+            print(f"Can't load {url}")
+        except Exception as e:
+            print(f"Error navigating to {url}: {e}")
+        await asyncio.sleep(3)
+    else:
         return
 
+    await select_addr(page, addr)
     # 1. Hydrate Title (up to 6s)
     product_name = '-'
     for _ in range(30):
@@ -113,14 +137,19 @@ async def atb_parsing(page: Page, url: str):
         producer = raw_prod.strip() if raw_prod else '-'
     except Exception:
         producer = '-'
-
+    try:
+        id_not_sep = await page.locator('span[class="custom-tag__text"]').first.text_content()
+        id = (id_not_sep.split(':'))[1]
+    except TimeoutError:
+        id = '-'
     data_row = {
         'shop': 'АТБ',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
         'producer': clean_prod(producer),
-        'url': page.url
+        'url': page.url,
+        'id':id.strip()
     }
     await add_to_excel(data_row)
     print(data_row)
@@ -147,11 +176,11 @@ async def test():
         bw = await pw.chromium.launch(headless=False)
         page = await bw.new_page()
         urls = [
-    "https://www.atbmarket.com/product/cukerki-v-sokoladi-30-g-bob-snail-naturalni-ablucno-polunicni-ablucno-malinovi-kup",
-    "https://www.atbmarket.com/product/pure-200-g-elfik-agidnij-miks-dp",
-    "https://www.atbmarket.com/product/pure-110-g-elfik-krem-sup-z-kurkou-dp",
-    "https://www.atbmarket.com/product/pure-90-g-galicia-baby-ablucno-grusevo-spinatne-dp",
-    "https://www.atbmarket.com/product/pure-90-g-cudo-cado-fruktovo-agidne-z-kaseu-zlakovou-vid-6-mis",
+    "https://www.atbmarket.com/product/cukerki-v-sokoladi-30-g-bob-snail-naturalni-ablucno-polunicni-ablucno-malinovi-kup&&&1",
+    "https://www.atbmarket.com/product/pure-200-g-elfik-agidnij-miks-dp&&&2",
+    "https://www.atbmarket.com/product/pure-110-g-elfik-krem-sup-z-kurkou-dp&&&3",
+    # "https://www.atbmarket.com/product/pure-90-g-galicia-baby-ablucno-grusevo-spinatne-dp",
+    # "https://www.atbmarket.com/product/pure-90-g-cudo-cado-fruktovo-agidne-z-kaseu-zlakovou-vid-6-mis",
 ]
         for item in urls:
             await atb_parsing(page, item)

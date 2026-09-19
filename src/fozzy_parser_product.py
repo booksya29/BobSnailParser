@@ -44,13 +44,17 @@ async def check_in_stock(page: Page) -> bool:
         return True
 
 async def fozzy_parsing_one(page: Page, url: str):
-    try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-    except TimeoutError:
-        print(f"Can't load {url}")
-        return
-    except Exception as e:
-        print(f"Error navigating to {url}: {e}")
+    for _ in range(3):
+        try:
+            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            await page.wait_for_selector('h1', timeout=15000)
+            break
+        except TimeoutError:
+            print(f"Can't load {url}")
+        except Exception as e:
+            print(f"Error navigating to {url}: {e}")
+        await asyncio.sleep(3)
+    else:
         return
 
     # 1. Hydrate Title (up to 6s)
@@ -106,13 +110,20 @@ async def fozzy_parsing_one(page: Page, url: str):
     except Exception:
         producer = '-'
 
+    id = '-'
+    try:
+        id_not_sep = await page.locator('div[class="reference_block"]').locator('span[class="product_reference"]').text_content()
+        id = ((id_not_sep.split(':'))[1]).strip()
+    except TimeoutError:
+        id = '-'
     data = {
         'shop': 'Фоззі',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
         'producer': clean_prod(producer),
-        'url': page.url
+        'url': page.url,
+        'id':id
     }
     await add_to_excel(data)
     print(data)
@@ -132,3 +143,15 @@ async def fozzy_parsing_all(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
+
+async def test():
+    async with async_playwright() as pw:
+        bw = await pw.chromium.launch(headless=False)
+        page = await bw.new_page()
+        urls = ['https://fozzyshop.ua/avtokhimiya/879248-polirol-d-paneli-pryl-turtlewax-freshshine-novavt.html', 'https://fozzyshop.ua/onlayn-deshevshe/944055-khamon-porxas-serrano-s-v-9-11-misiatsiv.html', 'https://fozzyshop.ua/kvas/923493-kvas-kvas-taras-khlibnyi-z-b.html', 'https://fozzyshop.ua/vitchyznyane-pyvo/921564-pyvo-lvivske-1715-svitle.html']
+        for i in urls:
+            await fozzy_parsing_one(page, i)
+            await asyncio.sleep(1)
+
+if __name__ == '__main__':
+    asyncio.run(test())

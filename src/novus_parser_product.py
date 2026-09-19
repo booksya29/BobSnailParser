@@ -43,13 +43,17 @@ async def check_in_stock(page: Page) -> bool:
         return True
 
 async def novus_parsing_one(page: Page, url: str):
-    try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=25000)
-    except TimeoutError:
-        print(f"Can't load {url}")
-        return
-    except Exception as e:
-        print(f"Error navigating to {url}: {e}")
+    for _ in range(3):
+        try:
+            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            await page.wait_for_selector('h1', timeout=15000)
+            break
+        except TimeoutError:
+            print(f"Can't load {url}")
+        except Exception as e:
+            print(f"Error navigating to {url}: {e}")
+        await asyncio.sleep(3)
+    else:
         return
 
     product_name = '-'
@@ -109,13 +113,15 @@ async def novus_parsing_one(page: Page, url: str):
     except Exception:
         producer = '-'
 
+    id = page.url.split('--')[1][1::].replace('/', '')
     data = {
         'shop': 'Новус',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
         'producer': clean_prod(producer),
-        'url': page.url
+        'url': page.url,
+        'id':id
     }
     await add_to_excel(data)
     print(data)
@@ -140,7 +146,9 @@ async def test():
     async with async_playwright() as pw:
         bw = await pw.chromium.launch(headless=False)
         page = await bw.new_page()
-        await novus_parsing_one(page, "https://novus.zakaz.ua/uk/products/tsukerka-100g-ukrayina--04820219346524/")
-
+        urls = ['https://novus.zakaz.ua/uk/products/tsukerka-100g-ukrayina--04820219346524/', 'https://novus.zakaz.ua/uk/products/tsukerka-bob-sneil-60g--04820219340584/', 'https://novus.zakaz.ua/uk/products/tsukerka-bob-sneil-20g-ukrayina--04820219349280/']
+        for i in urls:
+            await novus_parsing_one(page, i)
+            await asyncio.sleep(1)
 if __name__ == '__main__':
     asyncio.run(test())

@@ -36,8 +36,6 @@ from PySide6.QtCore import QObject, QThread, Signal
 
 from ui_form import Ui_Widget
 from config_dialog import ConfigDialog
-
-
 class GuiLogStream(QObject):
     """Routes print() output from the parser thread into the app window."""
 
@@ -68,18 +66,53 @@ class Worker(QObject):
     failed = Signal(str)
     progress = Signal(str, int)
 
+    def __init__(self, target_shop: str = None):
+        super().__init__()
+        self.target_shop = target_shop
+        self._is_stopped = False
+        self._browser = None
+        self._context = None
+        self._loop = None
+
+    def stop(self):
+        """Signals worker to stop and cancels all running tasks."""
+        self._is_stopped = True
+        if self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._cancel_all_tasks)
+
+    def _cancel_all_tasks(self):
+        try:
+            for task in asyncio.all_tasks(self._loop):
+                task.cancel()
+        except Exception:
+            pass
+
     def run(self):
         try:
-            asyncio.run(self._parse_all_shops())
-        except Exception as error:
-            self.failed.emit(str(error))
+            self._loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self._loop)
+            self._loop.run_until_complete(self._parse())
+        except BaseException as error:
+            if not self._is_stopped and not isinstance(error, asyncio.CancelledError):
+                self.failed.emit(str(error))
         finally:
+            try:
+                if self._loop and not self._loop.is_closed():
+                    self._loop.close()
+            except Exception:
+                pass
             self.finished.emit()
 
-    async def _parse_all_shops(self):
+    async def _parse(self):
         parsers = self._load_parsers()
         if not parsers:
             return
+
+        if self.target_shop:
+            parsers = [p for p in parsers if p[0] == self.target_shop]
+            if not parsers:
+                self.failed.emit(f"Не знайдено конфігурації для магазину {self.target_shop}.")
+                return
 
         active_shops = []
         for shop_key, parser_func, json_name in parsers:
@@ -90,14 +123,18 @@ class Worker(QObject):
                 self.progress.emit(shop_key, 100)
 
         if not active_shops:
-            self.failed.emit("Не знайдено жодного посилання. Будь ласка, додайте посилання у конфігурацію магазинів через 'Edit Config'.")
+            if self.target_shop:
+                self.failed.emit("Не знайдено жодного посилання для цього магазину. Додайте посилання через 'Edit Config'.")
+            else:
+                self.failed.emit("Не знайдено жодного посилання. Будь ласка, додайте посилання у конфігурацію магазинів через 'Edit Config'.")
             return
 
         from patchright.async_api import async_playwright
 
         async def run_shop(shop_key, parser_func, page):
             def on_progress(p):
-                self.progress.emit(shop_key, p)
+                if not self._is_stopped:
+                    self.progress.emit(shop_key, p)
 
             on_progress(0)
             print(f"[{shop_key.upper()}] Початок обробки.")
@@ -108,24 +145,36 @@ class Worker(QObject):
                 else:
                     await parser_func(page)
             except Exception as e:
-                print(f"Error parsing {shop_key}: {e}")
+                if not self._is_stopped:
+                    print(f"Error parsing {shop_key}: {e}")
             finally:
-                on_progress(100)
+                if not self._is_stopped:
+                    on_progress(100)
                 print(f"[{shop_key.upper()}] Обробку завершено.")
 
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(
-                headless=False,
-            )
-            context = await browser.new_context(
+            self._browser = await playwright.chromium.launch(
+    headless=False,
+    args=[
+        "--blink-settings=imagesEnabled=false",  
+        "--disk-cache-size=1",                  
+        "--media-cache-size=1",                
+        "--disable-dev-shm-usage",              
+    ]
+)
+            self._context = await self._browser.new_context(
                 viewport={"width": 1280, "height": 800}
             )
             try:
-                semaphore = asyncio.Semaphore(3)
+                semaphore = asyncio.Semaphore(3 if not self.target_shop else 1)
 
                 async def process_shop(shop_key, parser_func):
+                    if self._is_stopped:
+                        return
                     async with semaphore:
-                        page = await context.new_page()
+                        if self._is_stopped:
+                            return
+                        page = await self._context.new_page()
                         try:
                             await run_shop(shop_key, parser_func, page)
                         finally:
@@ -140,8 +189,13 @@ class Worker(QObject):
                 )
             finally:
                 try:
-                    await context.close()
-                    await browser.close()
+                    if self._context:
+                        await asyncio.shield(self._context.close())
+                except Exception:
+                    pass
+                try:
+                    if self._browser:
+                        await asyncio.shield(self._browser.close())
                 except Exception:
                     pass
 
@@ -211,9 +265,23 @@ class Widget(QWidget):
             "tavria": self.ui.TavriaProgressBar,
         }
 
-        self.start_button = self.ui.StartButton
-        self.start_button.clicked.connect(self.start_worker)
+        self.solo_buttons = {
+            "ashan": self.ui.AshanParsingButton,
+            "silpo": self.ui.SilpoParsing,
+            "atb": self.ui.ATBParsing,
+            "fozzy": self.ui.FozzyParsing,
+            "novus": self.ui.ParsingNovus,
+            "fora": self.ui.ForaParsing,
+            "varus": self.ui.VarusParsing,
+            "metro": self.ui.MatroParsing,
+            "tavria": self.ui.TavriaParsing,
+        }
 
+        # Підключення головних кнопок Start / Stop
+        self.ui.StartButton.clicked.connect(lambda: self.start_worker(target_shop=None))
+        self.ui.StopButton.clicked.connect(self.stop_worker)
+
+        # Підключення конфігурацій магазинів (Edit Config)
         self.ui.AshanButton.clicked.connect(lambda: self.open_config("Ашан", "ashan.json"))
         self.ui.SilpoButton.clicked.connect(lambda: self.open_config("Сільпо", "silpo.json"))
         self.ui.ATBButton.clicked.connect(lambda: self.open_config("АТБ", "atb.json"))
@@ -223,6 +291,17 @@ class Widget(QWidget):
         self.ui.VarusButton.clicked.connect(lambda: self.open_config("Варус", "varus.json"))
         self.ui.MetroButton.clicked.connect(lambda: self.open_config("Метро", "metro.json"))
         self.ui.TavriaButton.clicked.connect(lambda: self.open_config("Таврія", "tavria.json"))
+
+        # Підключення кнопок сольного запуску
+        for shop_key, btn in self.solo_buttons.items():
+            btn.clicked.connect(lambda checked=False, k=shop_key: self.start_worker(target_shop=k))
+
+    def set_running_state(self, is_running: bool):
+        """Вмикає або вимикає кнопки в залежності від того, чи працює парсер."""
+        self.ui.StartButton.setEnabled(not is_running)
+        for btn in self.solo_buttons.values():
+            btn.setEnabled(not is_running)
+        self.ui.StopButton.setEnabled(is_running)
 
     def open_config(self, shop_name: str, json_filename: str):
         dialog = ConfigDialog(shop_name, json_filename, self)
@@ -238,18 +317,27 @@ class Widget(QWidget):
         scrollbar = self.log_output.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
-    def start_worker(self):
+    def start_worker(self, target_shop: str = None):
         if self.thread is not None and self.thread.isRunning():
-            return
+            if self.worker is not None and self.worker._is_stopped:
+                self.thread.quit()
+                self.thread.wait(500)
+            else:
+                return
 
-        for pb in self.progress_bars.values():
-            pb.setValue(0)
+        if target_shop:
+            if target_shop in self.progress_bars:
+                self.progress_bars[target_shop].setValue(0)
+            self.append_log(f"Запуск парсингу для магазину: {target_shop.upper()}.")
+        else:
+            for pb in self.progress_bars.values():
+                pb.setValue(0)
+            self.append_log("Запуск парсингу всіх налаштованих магазинів.")
 
-        self.append_log("Запуск парсингу всіх налаштованих магазинів.")
-        self.start_button.setEnabled(False)
+        self.set_running_state(True)
         self.thread = QThread(self)
 
-        self.worker = Worker()
+        self.worker = Worker(target_shop=target_shop)
         self.worker.moveToThread(self.thread)
 
         self.thread.started.connect(self.worker.run)
@@ -264,17 +352,27 @@ class Widget(QWidget):
 
         self.thread.start()
 
+    def stop_worker(self):
+        self.append_log("Запит на зупинку парсингу... Закриваємо браузер.")
+        if self.worker is not None:
+            self.worker.stop()
+        if self.thread is not None and self.thread.isRunning():
+            self.thread.quit()
+        self.set_running_state(False)
+
     def show_error(self, message):
         print(f"Parser error: {message}")
         QMessageBox.warning(self, "Інформація", str(message))
 
     def worker_finished(self):
         self.append_log("Парсинг завершено.")
-        self.start_button.setEnabled(True)
+        self.set_running_state(False)
         self.thread = None
         self.worker = None
 
     def closeEvent(self, event):
+        if self.worker is not None:
+            self.worker.stop()
         if self.thread is not None and self.thread.isRunning():
             self.thread.quit()
             self.thread.wait(2000)
@@ -284,10 +382,7 @@ class Widget(QWidget):
 
 
 if __name__ == "__main__":
-
     app = QApplication(sys.argv)
-
     widget = Widget()
     widget.show()
-
     sys.exit(app.exec())

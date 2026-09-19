@@ -1,4 +1,6 @@
-from patchright.async_api import Page, TimeoutError
+import asyncio
+
+from patchright.async_api import Page, TimeoutError, async_playwright
 from json_manager import add_json
 
 URL = "https://www.atbmarket.com/catalog/trademark/7903?store=1154"
@@ -41,3 +43,12 @@ async def start_parsing_atb_positions(page: Page) -> list:
     if atb_urls:
         await add_json(atb_urls, 'atb.json')
     return atb_urls
+
+async def test():
+    async with async_playwright() as pw:
+        bw = await pw.chromium.launch(headless=False)
+        page = await bw.new_page()
+        await page.goto('https://www.atbmarket.com/product/nabir-20-g-bob-snail-naturalni-fruktovi-cukerki-abluko-banan-ta-igraska-kup')
+        await select_addr(page, '1')
+if __name__ == '__main__':
+    asyncio.run(test())

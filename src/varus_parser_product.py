@@ -52,16 +52,26 @@ async def check_in_stock(page: Page) -> bool:
         return True
 
 async def varus_parsing_one(page: Page, url: str):
-    try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-    except TimeoutError:
-        print(f"Can't load {url}")
+    for _ in range(3):
+        try:
+            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            await page.wait_for_selector('h1[class="sf-heading__title"]', timeout=15000)
+            break
+        except TimeoutError:
+            print(f"Can't load {url}")
+        except Exception as e:
+            print(f"Error navigating to {url}: {e}")
+        await asyncio.sleep(3)
+    else:
         return
-    except Exception as e:
-        print(f"Error navigating to {url}: {e}")
-        return
-
-    # 1. Hydrate Title (up to 6s)
+    reload_btn = page.locator('#reload-button')
+    if await reload_btn.count() > 0:
+        try:
+            await reload_btn.click(timeout=3000)
+            await page.wait_for_load_state('domcontentloaded', timeout=15000)
+            await asyncio.sleep(1)
+        except Exception as e:
+            pass
     product_name = '-'
     for _ in range(30):
         try:
@@ -122,13 +132,19 @@ async def varus_parsing_one(page: Page, url: str):
     except Exception:
         producer = '-'
 
+    try:
+        id_not_sep = await page.locator('div[class="articul"]').text_content()
+        id = id_not_sep.split(':')[1].strip()
+    except TimeoutError:
+        id = '-'
     data = {
         'shop': 'Варус',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
         'producer': clean_prod(producer),
-        'url': page.url
+        'url': page.url,
+        'id':id
     }
     await add_to_excel(data)
     print(data)
@@ -154,8 +170,10 @@ async def test():
     async with async_playwright() as pw:
         bw = await pw.chromium.launch(headless=False)
         page = await bw.new_page()
+        urls = ['https://vardus.ua/morozivo-holdi-mango-3d-65-g', 'https://varus.ua/olivki-lorado-zeleni-z-krevetkoyu-280-g', 'https://varus.ua/liker-egermaster-0-7l-35-1?sc_content=22306_r536v760', 'https://varus.ua/skumbriya-tihookeanskaya-s-golovoy-svezhemorozhenaya-vesovaya?sc_content=22306_r536v760']
+        for i in urls:
+            await varus_parsing_one(page, i)
+            await asyncio.sleep(1)
 
-        await varus_parsing_one(page, url='https://varus.ua/marmelad-bob-snail-grusha-apelsin-v-belgijskom-molochnom-shokolade-naturalnyj-54-g')
-        await varus_parsing_one(page, url='https://varus.ua/pyure-yabluko-grusha-ravlik-bob-pauch-90g')
 if __name__ == '__main__':
     asyncio.run(test())

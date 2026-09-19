@@ -44,13 +44,17 @@ async def check_in_stock(page: Page) -> bool:
         return True
 
 async def tavria_parsing_one(page: Page, url: str):
-    try:
-        await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-    except TimeoutError:
-        print(f"Can't load {url}")
-        return
-    except Exception as e:
-        print(f"Error navigating to {url}: {e}")
+    for _ in range(3):
+        try:
+            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            await page.wait_for_selector('h1', timeout=15000)
+            break
+        except TimeoutError:
+            print(f"Can't load {url}")
+        except Exception as e:
+            print(f"Error navigating to {url}: {e}")
+        await asyncio.sleep(3)
+    else:
         return
 
     # 1. Hydrate Title (up to 6s)
@@ -110,14 +114,18 @@ async def tavria_parsing_one(page: Page, url: str):
             producer = raw_producer.strip() if raw_producer else '-'
     except Exception:
         producer = '-'
-
+    try:
+        id = (await page.locator('span[class="sku__info"]').text_content()).strip()
+    except:
+        id = '-'
     data = {
         'shop': 'Таврія',
         'name': product_name,
         'price': clean_p(price),
         'sale_price': clean_p(sale_price),
         'producer': clean_prod(producer),
-        'url': page.url
+        'url': page.url,
+        'id':id
     }
     await add_to_excel(data)
     print(data)
@@ -137,3 +145,14 @@ async def tavria_parsing_all(page: Page, on_progress=None):
         if on_progress:
             on_progress(int((i / total) * 100))
         await asyncio.sleep(1)
+
+async def test():
+    async with async_playwright() as pw:
+        bw = await pw.chromium.launch(headless=False)
+        page = await bw.new_page()
+        urls = ['https://www.tavriav.ua/p/%D1%86%D1%83%D0%BA%D0%B5%D1%80%D0%BA%D0%B8-%D1%80%D0%B0%D0%B2%D0%BB%D0%B8%D0%BA-%D0%B1%D0%BE%D0%B1-%D1%8F%D0%B1%D0%BB%D1%83%D0%BA%D0%BE-30-%D0%B3-1574881', 'https://www.tavriav.ua/p/%D1%88%D0%BE%D0%BA%D0%BE%D0%BB%D0%B0%D0%B4-%D0%BC%D0%BE%D0%BB%D0%BE%D1%87%D0%BD%D0%B8%D0%B8-%D0%B7-%D0%BA%D0%B5%D1%88%D1%8E-%D1%84%D1%83%D0%BD%D0%B4%D1%83%D0%BA%D0%BE%D0%BC-%D0%BC%D0%B8%D0%B3%D0%B4%D0%B0%D0%BB%D0%B5%D0%BC-%D1%82%D0%B0-%D1%81%D0%BC%D0%BE%D1%80%D0%BE%D0%B4%D0%B8%D0%BD%D0%BE%D1%8E-craft-series-%D0%BC%D1%96%D0%BB%D0%B5%D0%BD%D1%96%D1%83%D0%BC-100-%D0%B3-1584713', 'https://www.tavriav.ua/p/%D1%88%D0%BE%D0%BA%D0%BE%D0%BB%D0%B0%D0%B4-%D0%BC%D1%96%D0%BB%D0%B5%D0%BD%D1%96%D1%83%D0%BC-craft-series-%D0%BC%D0%BE%D0%BB%D0%BE%D1%87%D0%BD%D0%B8%D0%B8-%D0%B7-%D0%BC%D0%B8%D0%B3%D0%B4%D0%B0%D0%BB%D0%B5%D0%BC-%D1%82%D0%B0-%D0%BF%D0%B5%D1%87%D0%B8%D0%B2%D0%BE%D0%BC-%D0%B0%D0%BC%D0%B0%D1%80%D0%B5%D1%82%D1%82%D1%96-100-%D0%B3-1584711']
+        for i in urls:
+            await tavria_parsing_one(page, i)
+            await asyncio.sleep(1)
+if __name__ == '__main__':
+    asyncio.run(test())
